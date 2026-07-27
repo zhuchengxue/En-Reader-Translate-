@@ -129,8 +129,12 @@ const Interaction = (() => {
    */
   function attach(doc, offsetFn, handlers) {
     let clickTimer = null;
+    let lastTap = null;          // 移动端双击检测：上一次 tap 的视口坐标与时间
+    let touchStart = null;       // 移动端 touchstart 记录
+    let touchSuppressUntil = 0;  // 触摸处理后抑制合成的 click，避免重复触发
 
     doc.addEventListener('click', (e) => {
+      if (Date.now() < touchSuppressUntil) return; // 触摸已处理，跳过合成的 click
       const off = offsetFn ? offsetFn() : { x: 0, y: 0 };
       const vx = e.clientX + off.x;
       const vy = e.clientY + off.y;
@@ -174,6 +178,69 @@ const Interaction = (() => {
         : null;
       handlers.onSentence && handlers.onSentence(sent, word, vx, vy, sentRect);
     }, true);
+
+    /* ===== 触摸支持：移动端单击单词翻译、双击整句翻译 =====
+     * 移动端原生 dblclick 不可靠，且单击的 e.target 常指向整块文本而非单词 span，
+     * 故用 touchstart/touchend + elementFromPoint 做坐标命中测试，并 preventDefault 阻止原生选区。 */
+    doc.addEventListener('touchstart', (e) => {
+      if (!e.touches || e.touches.length !== 1) { touchStart = null; return; }
+      const t = e.touches[0];
+      touchStart = { x: t.clientX, y: t.clientY, t: Date.now() };
+    }, { passive: true });
+
+    doc.addEventListener('touchend', (e) => {
+      if (!touchStart) return;
+      const ct = e.changedTouches && e.changedTouches[0];
+      if (!ct) { touchStart = null; return; }
+      const dx = Math.abs(ct.clientX - touchStart.x);
+      const dy = Math.abs(ct.clientY - touchStart.y);
+      const dt = Date.now() - touchStart.t;
+      touchStart = null;
+      if (dx > 10 || dy > 10 || dt > 600) return; // 移动过大视为滚动，不处理
+
+      const off = offsetFn ? offsetFn() : { x: 0, y: 0 };
+      const vx = ct.clientX + off.x;
+      const vy = ct.clientY + off.y;
+      // 用坐标命中测试（比 e.target 可靠，移动端 tap 的 target 常不准确）
+      const el = doc.elementFromPoint(ct.clientX, ct.clientY);
+      const span = el && el.closest ? el.closest('.w') : null;
+
+      if (span) {
+        e.preventDefault();           // 阻止原生选区与合成的 click
+        touchSuppressUntil = Date.now() + 1200;
+        clearSel(doc);
+        handlers.onWordStart && handlers.onWordStart(span.textContent, vx, vy, span);
+        // 双击检测：与上一次 tap 间隔 < 320ms 且位置接近 → 翻译整句
+        if (lastTap && (Date.now() - lastTap.t) < 320 &&
+            Math.abs(vx - lastTap.x) < 30 && Math.abs(vy - lastTap.y) < 30) {
+          if (clickTimer) { clearTimeout(clickTimer); clickTimer = null; }
+          lastTap = null;
+          const sent = sentenceOf(span);
+          const word = span.textContent;
+          selectSentence(span);
+          const sRect = getSentenceRect(span);
+          const sentRect = sRect
+            ? { top: sRect.top + off.y, bottom: sRect.bottom + off.y, left: sRect.left + off.x, right: sRect.right + off.x }
+            : null;
+          handlers.onSentence && handlers.onSentence(sent, word, vx, vy, sentRect);
+        } else {
+          lastTap = { x: vx, y: vy, t: Date.now() };
+          if (clickTimer) { clearTimeout(clickTimer); clickTimer = null; }
+          clickTimer = setTimeout(() => {
+            clickTimer = null;
+            handlers.onWord && handlers.onWord(span.textContent, vx, vy, span);
+          }, 260);
+        }
+        return;
+      }
+
+      // 空白处：翻页/呼出工具栏
+      e.preventDefault();
+      touchSuppressUntil = Date.now() + 1200;
+      clearSel(doc);
+      const fx = vx / window.innerWidth;
+      handlers.onBlank && handlers.onBlank(fx, el);
+    }, { passive: false });
   }
 
   /* 清除主文档与 EPUB iframe 中的文本选择（弹层关闭时调用） */
