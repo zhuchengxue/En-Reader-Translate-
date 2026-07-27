@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>英文原版书阅读器</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%93%96%3C/text%3E%3C/svg%3E">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#3b82f6">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body data-theme="light" data-view="shelf">
+
+<!-- ============ 书架视图 ============ -->
+<div id="view-shelf" class="view">
+  <header class="shelf-header">
+    <div class="shelf-title">
+      <h1>我的书架</h1>
+      <span id="stat-line" class="stat-line">今日阅读 0 分钟</span>
+    </div>
+    <div class="shelf-actions">
+      <button id="btn-vocab" class="btn-ghost">生词本 <span id="vocab-count" class="badge">0</span></button>
+      <button id="btn-import" class="btn-primary">＋ 导入图书</button>
+    </div>
+  </header>
+  <main id="shelf-grid" class="shelf-grid"></main>
+  <div id="shelf-empty" class="shelf-empty hidden">
+    <div class="empty-book-icon"></div>
+    <p>书架空空如也</p>
+    <p class="empty-hint">点击「导入图书」或将 EPUB / TXT / PDF 文件拖入此页面</p>
+  </div>
+  <input type="file" id="file-input" accept=".epub,.txt,.pdf" multiple hidden>
+  <div id="drop-overlay" class="drop-overlay hidden"><div class="drop-tip">松开导入图书</div></div>
+</div>
+
+<!-- ============ 生词本视图 ============ -->
+<div id="view-vocab" class="view hidden">
+  <header class="sub-header">
+    <button id="btn-vocab-back" class="btn-ghost">← 返回书架</button>
+    <h2>生词本</h2>
+    <button id="btn-vocab-export" class="btn-ghost">导出 CSV</button>
+  </header>
+  <main id="vocab-list" class="vocab-list"></main>
+  <div id="vocab-empty" class="shelf-empty hidden"><p>还没有生词</p><p class="empty-hint">阅读时点击单词，在词典卡片中加入生词本</p></div>
+</div>
+
+<!-- ============ 阅读视图 ============ -->
+<div id="view-reader" class="view hidden">
+  <header id="reader-top" class="reader-top">
+    <button id="btn-back" class="btn-ghost">← 书架</button>
+    <div class="reader-title"><span id="reader-book-title"></span></div>
+    <button id="btn-settings" class="btn-ghost">Aa</button>
+  </header>
+
+  <main id="reader-container" class="reader-container"></main>
+
+  <footer id="reader-bottom" class="reader-bottom">
+    <div class="progress-track"><div id="progress-fill" class="progress-fill"></div></div>
+    <div class="reader-toolbar">
+      <button id="btn-toc" class="tool-btn">目录</button>
+      <button id="btn-prev" class="tool-btn">上一页</button>
+      <span id="page-label" class="page-label">–</span>
+      <button id="btn-next" class="tool-btn">下一页</button>
+      <button id="btn-pagemode" class="tool-btn">双页</button>
+    </div>
+  </footer>
+
+  <!-- 目录抽屉 -->
+  <div id="toc-drawer" class="toc-drawer">
+    <div class="toc-head"><h3>目录</h3><button id="btn-toc-close" class="btn-ghost">✕</button></div>
+    <div id="toc-list" class="toc-list"></div>
+  </div>
+  <div id="toc-mask" class="mask hidden"></div>
+
+  <!-- 设置面板 -->
+  <div id="settings-panel" class="settings-panel">
+    <div class="set-row">
+      <span class="set-label">主题</span>
+      <div class="theme-swatches">
+        <button class="swatch swatch-light" data-t="light" title="亮色"></button>
+        <button class="swatch swatch-sepia" data-t="sepia" title="护眼"></button>
+        <button class="swatch swatch-dark" data-t="dark" title="暗色"></button>
+      </div>
+    </div>
+    <div class="set-row">
+      <span class="set-label">字号</span>
+      <div class="font-ctrl">
+        <button id="font-minus" class="tool-btn">A-</button>
+        <span id="font-size-label">18</span>
+        <button id="font-plus" class="tool-btn">A+</button>
+      </div>
+    </div>
+    <div class="set-row">
+      <span class="set-label">单击单词</span>
+      <div class="seg" id="click-mode-seg">
+        <button data-m="sound">只发音</button>
+        <button data-m="meaning">只释义</button>
+        <button data-m="both" class="on">发音+释义</button>
+      </div>
+    </div>
+    <div class="set-row set-row-col">
+      <span class="set-label">翻译代理</span>
+      <div class="proxy-input-row">
+        <input id="proxy-input" class="set-input" type="text" placeholder="粘贴代理地址（如 https://xxx.workers.dev）" autocomplete="off">
+        <button id="proxy-test" class="tool-btn">测试</button>
+      </div>
+      <span id="proxy-status" class="set-hint">未设置（当前走公共翻译，偏慢且有每日限额）</span>
+      <span class="set-hint">翻译慢 / 报错时，填入自建代理即可稳定高速翻译。<button id="proxy-help" class="link-btn">免费一键部署 →</button></span>
+    </div>
+    <div class="set-row">
+      <span class="set-label">提示</span>
+      <span class="set-hint">双击单词可翻译整句 · 点击页面中部呼出/隐藏工具栏</span>
+    </div>
+  </div>
+  <div id="settings-mask" class="mask hidden"></div>
+
+  <!-- 翻译代理部署引导 -->
+  <div id="proxy-help-panel" class="proxy-help-panel">
+    <div class="ph-head"><h3>免费部署翻译代理（约 1 分钟）</h3><button id="ph-close" class="btn-ghost">✕</button></div>
+    <ol class="ph-steps">
+      <li>已登录 Cloudflare 的浏览器中，直接运行项目里的 <code>worker/deploy.bat</code>（Windows 一键部署，会自动打开授权页，点允许即可）。</li>
+      <li>部署完成后会得到一个 <code>https://xxx.workers.dev</code> 地址。</li>
+      <li>把该地址粘贴到上方「翻译代理」并点「测试」，显示「连接正常」即生效，之后翻译快且不限量。</li>
+    </ol>
+    <pre id="ph-code" class="ph-code"></pre>
+    <div class="ph-actions">
+      <button id="ph-copy" class="chip chip-accent">复制 Worker 代码</button>
+      <a id="ph-open" class="chip" href="https://dash.cloudflare.com/" target="_blank" rel="noopener">打开 Cloudflare</a>
+    </div>
+  </div>
+  <div id="proxy-help-mask" class="mask hidden"></div>
+</div>
+
+<!-- Worker 代码（部署用，不参与页面渲染） -->
+<script type="text/plain" id="worker-code">
+export default {
+  async fetch(request, env) {
+    const cors = {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'POST, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type',
+    };
+    if (request.method === 'OPTIONS') {
+      return new Response(null, { headers: cors });
+    }
+    if (request.method !== 'POST') {
+      return new Response('Send POST {text, from, to}', { status: 405, headers: cors });
+    }
+    let body = {};
+    try { body = await request.json(); } catch (e) {}
+    const text = (body.text || '').toString();
+    const from = body.from || 'en';
+    const to = body.to || 'zh-CN';
+    if (!text) {
+      return new Response(JSON.stringify({ translatedText: '' }), { headers: { ...cors, 'Content-Type': 'application/json' } });
+    }
+    const url = 'https://translate.googleapis.com/translate_a/single?client=gtx&sl=' + from + '&tl=' + to + '&dt=t&q=' + encodeURIComponent(text.slice(0, 1000));
+    try {
+      const r = await fetch(url);
+      const data = await r.json();
+      const translated = (data[0] || []).map(seg => seg[0]).join('');
+      return new Response(JSON.stringify({ translatedText: translated }), { headers: { ...cors, 'Content-Type': 'application/json' } });
+    } catch (e) {
+      return new Response(JSON.stringify({ translatedText: '' }), { status: 502, headers: { ...cors, 'Content-Type': 'application/json' } });
+    }
+  }
+};
+</script>
+
+<!-- ============ 词典卡片 ============ -->
+<div id="dict-popup" class="dict-popup hidden">
+  <div class="dict-head">
+    <span id="dict-word" class="dict-word"></span>
+    <span id="dict-phonetic" class="dict-phonetic"></span>
+  </div>
+  <div id="dict-body" class="dict-body"></div>
+  <div class="dict-actions">
+    <button id="dict-speak" class="chip">🔊 发音</button>
+    <button id="dict-add" class="chip chip-accent">＋ 生词本</button>
+  </div>
+</div>
+
+<!-- ============ 句子翻译（底部弹层，只显示中文译文） ============ -->
+<div id="sent-popup" class="sent-popup">
+  <div class="sent-zh" id="sent-zh">翻译中…</div>
+  <div class="dict-actions">
+    <button id="sent-speak" class="chip">🔊 朗读句子</button>
+    <button id="sent-close" class="chip">关闭</button>
+  </div>
+</div>
+
+<div id="toast" class="toast hidden"></div>
+<div id="loading" class="loading hidden"><div class="spinner"></div><span id="loading-text">加载中…</span></div>
+
+<script src="vendor/jszip.min.js"></script>
+<script src="vendor/epub.min.js"></script>
+<script src="vendor/pdf.min.js"></script>
+<script src="js/db.js"></script>
+<script src="js/services.js"></script>
+<script src="js/interaction.js"></script>
+<script src="js/readers/txt.js"></script>
+<script src="js/readers/epub.js"></script>
+<script src="js/readers/pdf.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
