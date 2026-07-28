@@ -134,6 +134,40 @@ class TxtReader {
     }
   }
 
+  /* ---------- 书签 / 朗读 ---------- */
+  getLocation() { return { section: this.section, page: this.page }; }
+
+  /* 当前屏幕可见段落文本（连续朗读用） */
+  getPageText() {
+    if (!this.content) return '';
+    const ps = this.content.children;
+    const vp = this.viewport.getBoundingClientRect();
+    const out = [];
+    for (const p of ps) {
+      const r = p.getBoundingClientRect();
+      if (r.width && r.right > vp.left && r.left < vp.right && r.bottom > vp.top - 4 && r.top < vp.bottom + 4) {
+        const t = (p.textContent || '').trim();
+        if (t) out.push(t);
+      }
+    }
+    return out.join(' ');
+  }
+
+  /* 当前阅读位置所在段落（读此段用）：取视口内第一个非空段落 */
+  getCurrentText() {
+    if (!this.content) return '';
+    const ps = this.content.children;
+    const vp = this.viewport.getBoundingClientRect();
+    for (const p of ps) {
+      const r = p.getBoundingClientRect();
+      if (r.width && r.right > vp.left && r.left < vp.right && r.bottom > vp.top && r.top < vp.bottom) {
+        const t = (p.textContent || '').trim();
+        if (t) return t;
+      }
+    }
+    return (ps[0] && (ps[0].textContent || '').trim()) || '';
+  }
+
   getToc() { return this.toc; }
 
   /* ---------- 书内全文搜索 ---------- */

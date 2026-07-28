@@ -134,6 +134,8 @@ async function clearSentPopup(page) {
   const logs = [];
   page.on('console', m => { if (m.type() === 'error') { const t = m.text(); if (/Failed to load resource|status of 4|status of 5/i.test(t)) return; logs.push(t); } });
   page.on('pageerror', e => logs.push('PAGEERROR: ' + e.message));
+  /* 书签命名用 window.prompt，自动接受（移动端 mpage 不注册，不影响） */
+  page.on('dialog', d => { try { d.accept('测试书签'); } catch (e) {} });
 
   const results = [];
   const check = (name, cond, extra) => { results.push({ name, pass: !!cond, extra: extra || '' }); };
@@ -238,6 +240,43 @@ async function clearSentPopup(page) {
   });
   check('句子弹层不遮挡选中句', ov.ok, JSON.stringify(ov));
 
+  // 书签：添加 / 列表 / 跳转
+  await page.keyboard.press('Escape'); await page.waitForTimeout(200);
+  await page.evaluate(() => document.querySelector('#btn-bookmark').click());
+  await page.waitForTimeout(300);
+  const bmOpen = await page.evaluate(() => document.querySelector('#bookmark-drawer').classList.contains('open'));
+  check('书签抽屉可打开', bmOpen);
+  const bmBefore = await page.evaluate(() => document.querySelectorAll('#bookmark-list .bm-item').length);
+  await page.evaluate(() => document.querySelector('#btn-bm-add').click());
+  await page.waitForTimeout(400);
+  const bmAfter = await page.evaluate(() => document.querySelectorAll('#bookmark-list .bm-item').length);
+  check('书签添加成功', bmAfter === bmBefore + 1, 'before=' + bmBefore + ' after=' + bmAfter);
+  await page.evaluate(() => { const j = document.querySelector('#bookmark-list .bm-jump'); j && j.click(); });
+  await page.waitForTimeout(300);
+  const bmClosed = await page.evaluate(() => !document.querySelector('#bookmark-drawer').classList.contains('open'));
+  check('书签跳转后关闭抽屉', bmClosed);
+
+  // 朗读：读此段 + 连续朗读（会话内静默 TTS，仅验证触发与按钮态切换）
+  await page.evaluate(() => {
+    window.__speak = 0;
+    window.speechSynthesis.speak = () => { window.__speak++; };
+    const g = window.speechSynthesis.getVoices.bind(window.speechSynthesis);
+    window.speechSynthesis.getVoices = () => { const v = g(); return (v && v.length) ? v : [{ name: 'Google US English', lang: 'en-US' }]; };
+  });
+  await page.evaluate(() => document.querySelector('#btn-read-para').click());
+  await page.waitForTimeout(300);
+  const speakPara = await page.evaluate(() => window.__speak);
+  check('读此段触发 TTS', speakPara > 0, 'speak=' + speakPara);
+  await page.evaluate(() => { window.__speak = 0; });
+  await page.evaluate(() => document.querySelector('#btn-read').click());
+  await page.waitForTimeout(300);
+  const reading = await page.evaluate(() => ({ txt: document.querySelector('#btn-read').textContent, speak: window.__speak }));
+  check('连续朗读开始(按钮变停止+TTS)', /停止/.test(reading.txt) && reading.speak > 0, JSON.stringify(reading));
+  await page.evaluate(() => document.querySelector('#btn-read').click());
+  await page.waitForTimeout(200);
+  const stopped = await page.evaluate(() => document.querySelector('#btn-read').textContent);
+  check('连续朗读可停止', /朗读/.test(stopped), 'txt=' + stopped);
+
   // EPUB 单击（iframe 坐标命中）
   await page.keyboard.press('Escape'); await page.waitForTimeout(200);
   await openByTitle('Test English'); await page.waitForTimeout(2000); await waitLoading();
@@ -277,6 +316,20 @@ async function clearSentPopup(page) {
   await page.reload(); await page.waitForTimeout(2500); await waitLoading();
   const persisted = await page.evaluate(() => ({ view: document.body.dataset.view, hasReader: !!document.querySelector('#reader-container .txt-viewport, #reader-container .epub-holder, #reader-container .pdf-stage'), last: (JSON.parse(localStorage.getItem('en-reader-settings')||'{}')).lastBookId }));
   check('刷新后仍在书中', persisted.view === 'reader' && persisted.hasReader, JSON.stringify(persisted));
+
+  // 书签持久化：重新打开 TXT，书签仍在；并测试删除
+  await openByTitle('Gatsby'); await page.waitForTimeout(2500); await waitLoading();
+  await page.waitForSelector('#reader-container .txt-content', { timeout: 10000 }).catch(() => {});
+  await page.evaluate(() => document.querySelector('#btn-bookmark').click());
+  await page.waitForTimeout(300);
+  const bmPersist = await page.evaluate(() => document.querySelectorAll('#bookmark-list .bm-item').length);
+  check('书签刷新后持久化', bmPersist >= 1, 'count=' + bmPersist);
+  const bmDelBefore = bmPersist;
+  await page.evaluate(() => { const d = document.querySelector('#bookmark-list .bm-del'); d && d.click(); });
+  await page.waitForTimeout(300);
+  const bmDelAfter = await page.evaluate(() => document.querySelectorAll('#bookmark-list .bm-item').length);
+  check('书签可删除', bmDelAfter === bmDelBefore - 1, 'before=' + bmDelBefore + ' after=' + bmDelAfter);
+  await page.evaluate(() => document.querySelector('#btn-bm-close').click());
 
   // 响应式：窄窗口无横向溢出
   await page.setViewportSize({ width: 820, height: 600 }); await page.waitForTimeout(400);

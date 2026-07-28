@@ -229,6 +229,25 @@ class PdfReader {
 
   getToc() { return this.toc; }
 
+  /* ---------- 书签 / 朗读 ---------- */
+  getLocation() { return { page: this.page }; }
+
+  /* 懒提取单页文本（不依赖文本层 DOM 是否渲染，连续朗读也能用） */
+  async _pageText(page) {
+    if (this._pageTexts && this._pageTexts[page - 1] != null) return this._pageTexts[page - 1];
+    try {
+      const p = await this.doc.getPage(page);
+      const tc = await p.getTextContent();
+      const t = tc.items.map(i => i.str).join(' ').replace(/\s+/g, ' ');
+      if (!this._pageTexts) this._pageTexts = new Array(this.total);
+      this._pageTexts[page - 1] = t;
+      return t;
+    } catch (e) { return ''; }
+  }
+
+  async getPageText() { return await this._pageText(this.page); }
+  async getCurrentText() { return await this._pageText(this.page); }
+
   /* ---------- 书内全文搜索 ----------
    * 首次搜索时逐页提取文本并缓存（仅字符串，内存可控），之后的搜索直接命中缓存。
    * 返回 [{snippet, label, target:{page}}]，最多 200 条。 */

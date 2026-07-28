@@ -4,7 +4,7 @@ const DB = (() => {
 
   function open() {
     return new Promise((resolve, reject) => {
-      const req = indexedDB.open('en-reader', 1);
+      const req = indexedDB.open('en-reader', 2);
       req.onupgradeneeded = (e) => {
         const d = e.target.result;
         if (!d.objectStoreNames.contains('books')) {
@@ -17,6 +17,9 @@ const DB = (() => {
         if (!d.objectStoreNames.contains('vocab')) {
           const s = d.createObjectStore('vocab', { keyPath: 'word' });
           s.createIndex('addedAt', 'addedAt');
+        }
+        if (!d.objectStoreNames.contains('bookmarks')) {
+          d.createObjectStore('bookmarks', { keyPath: 'id' });
         }
       };
       req.onsuccess = (e) => { db = e.target.result; resolve(); };
@@ -46,6 +49,17 @@ const DB = (() => {
     getAll: (store) => new Promise((resolve, reject) => {
       const r = db.transaction(store).objectStore(store).getAll();
       r.onsuccess = () => resolve(r.result || []);
+      r.onerror = (e) => reject(e.target.error);
+    }),
+    /* 书签：按书聚合（store 仅 bookmarks，按 bookId 在 JS 端过滤并排序） */
+    addBookmark: (bm) => tx('bookmarks', 'readwrite', s => s.put(bm)),
+    delBookmark: (id) => tx('bookmarks', 'readwrite', s => s.delete(id)),
+    getBookmarks: (bookId) => new Promise((resolve, reject) => {
+      const r = db.transaction('bookmarks').objectStore('bookmarks').getAll();
+      r.onsuccess = () => {
+        const list = (r.result || []).filter(b => b.bookId === bookId).sort((a, b) => a.addedAt - b.addedAt);
+        resolve(list);
+      };
       r.onerror = (e) => reject(e.target.error);
     })
   };

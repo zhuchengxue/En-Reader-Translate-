@@ -132,6 +132,34 @@ class EpubReader {
   goTo(href) { this.rendition && this.rendition.display(href); }
   getToc() { return this.toc; }
 
+  /* ---------- 书签 / 朗读 ---------- */
+  getLocation() { return { cfi: this.currentCfi }; }
+
+  /* 当前可见页的文本（分页模式下，仅取落在 iframe 视口内的元素）。
+   * 避免把整章文本一次性读出导致连续朗读无法翻页：逐页读、逐页翻。 */
+  _visibleText(onlyFirst) {
+    try {
+      const contents = this.rendition.getContents();
+      if (!contents || !contents.length) return '';
+      const doc = contents[0].document;
+      const win = contents[0].window;
+      const els = doc.body.querySelectorAll('p, li, h1, h2, h3, h4, blockquote, div');
+      const out = [];
+      for (const el of els) {
+        const r = el.getBoundingClientRect();
+        if (!(r.width && r.bottom > 0 && r.top < win.innerHeight)) continue;
+        /* 跳过含块级子元素的容器节点（其子孙会单独处理），避免整章文本重复计入 */
+        if (el.children.length && el.querySelector('p, li')) continue;
+        const t = (el.textContent || '').replace(/\s+/g, ' ').trim();
+        if (t) { out.push(t); if (onlyFirst) break; }
+      }
+      return out.join(' ');
+    } catch (e) { return ''; }
+  }
+
+  getPageText() { return this._visibleText(false); }
+  getCurrentText() { return this._visibleText(true); }
+
   /* ---------- 书内全文搜索 ----------
    * 逐章加载 spine → section.find（epub.js 内部已做小写匹配）→ 卸载释放内存。
    * 返回 [{snippet, label, target: cfi}]，最多 200 条。 */
