@@ -1,0 +1,159 @@
+/* EPUB 阅读器：基于 epub.js，支持单/双页、主题注入、iframe 内单词交互 */
+class EpubReader {
+  constructor(container, buffer, opts) {
+    this.container = container;
+    this.buffer = buffer;
+    this.fontSize = opts.fontSize || 18;
+    this.pageMode = opts.pageMode || 'single';
+    this.theme = opts.theme || 'light';
+    this.handlers = opts.handlers || {};
+    this.onProgress = null;
+    this.currentCfi = null;
+    this.locReady = false;
+  }
+
+  async init(saved) {
+    this.holder = document.createElement('div');
+    this.holder.className = 'epub-holder';
+    this.container.appendChild(this.holder);
+
+    this.book = ePub(this.buffer);
+    await this.book.ready;
+    try {
+      const nav = await Promise.race([
+        this.book.loaded.navigation,
+        new Promise((_, rej) => setTimeout(() => rej(new Error('nav timeout')), 8000))
+      ]);
+      this.toc = this._flattenToc(nav.toc || []);
+    } catch (e) {
+      this.toc = [];
+    }
+
+    this._createRendition(saved && saved.cfi ? saved.cfi : undefined);
+
+    /* 后台生成 locations 用于百分比进度 */
+    this.book.locations.generate(1000).then(() => {
+      this.locReady = true;
+      this._emitProgress();
+    }).catch(() => {});
+  }
+
+  _flattenToc(items, lv) {
+    lv = lv || 1;
+    let out = [];
+    for (const it of items) {
+      out.push({ label: it.label.trim(), target: it.href, lv });
+      if (it.subitems && it.subitems.length && lv < 2) {
+        out = out.concat(this._flattenToc(it.subitems, lv + 1));
+      }
+    }
+    return out;
+  }
+
+  _themeStyles() {
+    const themes = {
+      light: { bg: '#ffffff', fg: '#1a1a1a' },
+      sepia: { bg: '#f5f0e1', fg: '#5b4636' },
+      dark:  { bg: '#1a1a1a', fg: '#c8c8c8' }
+    };
+    const t = themes[this.theme] || themes.light;
+    return {
+      body: {
+        'background': t.bg + ' !important',
+        'color': t.fg + ' !important',
+        'font-family': 'Georgia, "Times New Roman", serif !important',
+        'line-height': '1.8 !important'
+      },
+      'p, div, span, li': { 'color': t.fg + ' !important' },
+      'a': { 'color': '#3b82f6 !important' }
+    };
+  }
+
+  _createRendition(cfi) {
+    if (this.rendition) { try { this.rendition.destroy(); } catch (e) {} }
+    this.holder.innerHTML = '';
+    this.rendition = this.book.renderTo(this.holder, {
+      width: '100%',
+      height: '100%',
+      flow: 'paginated',
+      spread: this.pageMode === 'double' ? 'always' : 'none'
+    });
+
+    this.rendition.themes.register('reader', this._themeStyles());
+    this.rendition.themes.select('reader');
+    this.rendition.themes.fontSize(this.fontSize + 'px');
+
+    this.rendition.hooks.content.register((contents) => {
+      const doc = contents.document;
+      /* 注入单词高亮样式 */
+      const st = doc.createElement('style');
+      st.textContent = '.w{cursor:pointer;border-radius:2px}.w:hover{background:rgba(59,130,246,.18)}';
+      doc.head.appendChild(st);
+      Interaction.wrapWords(doc.body);
+      const offsetFn = () => {
+        try {
+          const f = contents.window.frameElement;
+          const r = f.getBoundingClientRect();
+          return { x: r.left, y: r.top };
+        } catch (e) { return { x: 0, y: 0 }; }
+      };
+      Interaction.attach(doc, offsetFn, this.handlers);
+      /* iframe 内键盘翻页 */
+      doc.addEventListener('keydown', (e) => {
+        if (e.key === 'ArrowRight' || e.key === ' ') this.next();
+        if (e.key === 'ArrowLeft') this.prev();
+      });
+    });
+
+    this.rendition.on('relocated', (loc) => {
+      this.currentCfi = loc.start.cfi;
+      this._loc = loc;
+      this._emitProgress();
+    });
+
+    this.rendition.display(cfi);
+  }
+
+  _emitProgress() {
+    if (!this.onProgress || !this._loc) return;
+    let pct = 0;
+    if (this.locReady) {
+      try { pct = this.book.locations.percentageFromCfi(this.currentCfi) || 0; } catch (e) {}
+    }
+    this.onProgress({
+      percent: pct,
+      label: this.locReady ? Math.round(pct * 100) + '%' : '…',
+      location: { cfi: this.currentCfi }
+    });
+  }
+
+  next() { this.rendition && this.rendition.next(); }
+  prev() { this.rendition && this.rendition.prev(); }
+  goTo(href) { this.rendition && this.rendition.display(href); }
+  getToc() { return this.toc; }
+
+  setFontSize(px) {
+    this.fontSize = px;
+    this.rendition.themes.fontSize(px + 'px');
+  }
+
+  setPageMode(m) {
+    this.pageMode = m;
+    this._createRendition(this.currentCfi);
+  }
+
+  setTheme(t) {
+    this.theme = t;
+    /* 重新注册主题并强制刷新 */
+    this.rendition.themes.register('reader-' + t, this._themeStyles());
+    this.rendition.themes.select('reader-' + t);
+  }
+
+  onResize() { /* epub.js 自适应 */ }
+
+  destroy() {
+    try { this.rendition && this.rendition.destroy(); } catch (e) {}
+    try { this.book && this.book.destroy(); } catch (e) {}
+    this.container.innerHTML = '';
+  }
+}
