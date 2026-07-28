@@ -7,7 +7,7 @@
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%93%96%3C/text%3E%3C/svg%3E">
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#3b82f6">
-<link rel="stylesheet" href="css/style.css?v=2026-07-28.7">
+<link rel="stylesheet" href="css/style.css?v=2026-07-28.8">
 </head>
 <body data-theme="light" data-view="shelf">
 
@@ -24,6 +24,7 @@
     <div class="shelf-actions">
       <button id="btn-diag" class="btn-ghost" title="自检 / 排查问题">🔧</button>
       <button id="btn-vocab" class="btn-ghost">生词本 <span id="vocab-count" class="badge">0</span></button>
+      <button id="btn-store" class="btn-ghost">📚 书城</button>
       <button id="btn-import" class="btn-primary">＋ 导入图书</button>
     </div>
   </header>
@@ -46,6 +47,26 @@
   </header>
   <main id="vocab-list" class="vocab-list"></main>
   <div id="vocab-empty" class="shelf-empty hidden"><p>还没有生词</p><p class="empty-hint">阅读时点击单词，在词典卡片中加入生词本</p></div>
+</div>
+
+<!-- ============ 古腾堡书城视图 ============ -->
+<div id="view-store" class="view hidden">
+  <header class="sub-header">
+    <button id="btn-store-back" class="btn-ghost">← 书架</button>
+    <h2>古腾堡书城</h2>
+    <span class="set-hint">免费公版英文书</span>
+  </header>
+  <div class="store-bar">
+    <input id="store-search" class="search-input" type="text" placeholder="搜索书名或作者，如 Alice、Sherlock、Dickens" autocomplete="off">
+    <button id="store-search-btn" class="tool-btn">搜索</button>
+  </div>
+  <div id="store-status" class="store-status hidden">加载中…</div>
+  <main id="store-results" class="shelf-grid"></main>
+  <div id="store-empty" class="shelf-empty hidden">
+    <p>没有找到相关书籍</p>
+    <p class="empty-hint">换个关键词试试，或留空直接浏览热门公版书</p>
+  </div>
+  <div class="store-more-wrap"><button id="store-more" class="tool-btn hidden">加载更多</button></div>
 </div>
 
 <!-- ============ 阅读视图 ============ -->
@@ -263,7 +284,7 @@ export default {
 /* 版本守卫：若浏览器缓存喂了旧版 app.js（APP_VER 与本页期望不符），
  * 自动注销 SW + 清空 Cache Storage + 强制带参重载一次，自愈旧缓存混跑。
  * sessionStorage 防死循环：自愈一次后若仍不符则停手（说明是别的问题）。 */
-window.__EXPECT_VER = '2026-07-28.7';
+window.__EXPECT_VER = '2026-07-28.8';
 window.addEventListener('load', function () {
   try {
     if (window.APP_VER === window.__EXPECT_VER) { sessionStorage.removeItem('ver-fix'); return; }
@@ -280,13 +301,14 @@ window.addEventListener('load', function () {
   } catch (e) {}
 });
 </script>
-<script src="js/db.js?v=2026-07-28.7"></script>
-<script src="js/services.js?v=2026-07-28.7"></script>
-<script src="js/interaction.js?v=2026-07-28.7"></script>
-<script src="js/readers/txt.js?v=2026-07-28.7"></script>
-<script src="js/readers/epub.js?v=2026-07-28.7"></script>
-<script src="js/readers/pdf.js?v=2026-07-28.7"></script>
-<script src="js/license.js?v=2026-07-28.7"></script>
-<script src="js/app.js?v=2026-07-28.7"></script>
+<script src="js/db.js?v=2026-07-28.8"></script>
+<script src="js/services.js?v=2026-07-28.8"></script>
+<script src="js/interaction.js?v=2026-07-28.8"></script>
+<script src="js/readers/txt.js?v=2026-07-28.8"></script>
+<script src="js/readers/epub.js?v=2026-07-28.8"></script>
+<script src="js/readers/pdf.js?v=2026-07-28.8"></script>
+<script src="js/license.js?v=2026-07-28.8"></script>
+<script src="js/gutenberg.js?v=2026-07-28.8"></script>
+<script src="js/app.js?v=2026-07-28.8"></script>
 </body>
 </html>

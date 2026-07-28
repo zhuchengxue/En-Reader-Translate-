@@ -5,6 +5,7 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const { Readable } = require('stream');
 const { webcrypto } = require('crypto');
 const ROOT = path.resolve(__dirname, '..');
 const PORT = process.env.PORT || 9000;
@@ -35,9 +36,55 @@ function readBody(req) {
   return new Promise((res, rej) => { let b = ''; req.on('data', c => b += c); req.on('end', () => res(b)); req.on('error', rej); });
 }
 
+/* 古腾堡代理：浏览器直连 gutenberg.org 会被 CORS 拦截，故经同源代理取搜索结果与文件字节。
+ * 仅放行受信任的公版书主机，防代理被滥用于抓取任意外站。 */
+const GUTEN_ALLOW = ['gutendex.com', 'www.gutenberg.org', 'gutenberg.org', 'aleph.pglaf.org', 'gutenberg.reader.bible'];
+async function handleGutenberg(req, res) {
+  const cors = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'GET, OPTIONS' };
+  if (req.method === 'OPTIONS') { res.writeHead(204, cors); res.end(); return; }
+  const target = new URL(req.url, 'http://localhost').searchParams.get('url');
+  if (!target) { res.writeHead(400, cors); res.end('missing url'); return; }
+  let host;
+  try { host = new URL(target).hostname; } catch (e) { res.writeHead(400, cors); res.end('bad url'); return; }
+  if (!GUTEN_ALLOW.includes(host)) { res.writeHead(403, cors); res.end('host not allowed'); return; }
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 30000);
+    let r = null, lastErr = null;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        r = await fetch(target, {
+          redirect: 'follow',
+          headers: { 'User-Agent': 'Mozilla/5.0 (compatible; EnReader/1.0)' },
+          signal: ctrl.signal
+        });
+        if (r.ok) break;
+        lastErr = new Error('upstream ' + r.status);
+      } catch (e) { lastErr = e; }
+    }
+    clearTimeout(timer);
+    if (!r || !r.ok) { res.writeHead((r && r.status) || 502, cors); res.end('upstream error: ' + (lastErr && lastErr.message)); return; }
+    const ct = r.headers.get('content-type') || 'application/octet-stream';
+    const len = r.headers.get('content-length');
+    const headers = { ...cors, 'Content-Type': ct, 'Cache-Control': 'public, max-age=3600' };
+    if (len) {
+      if (Number(len) > 60 * 1024 * 1024) { res.writeHead(413, cors); res.end('too large'); return; }
+      headers['Content-Length'] = len;
+    }
+    res.writeHead(200, headers);
+    /* 流式透传响应体：直接管道上游字节，避免大文件在内存里缓冲 */
+    const nodeStream = Readable.fromWeb(r.body);
+    nodeStream.on('error', () => { try { res.destroy(); } catch (e) {} });
+    nodeStream.pipe(res);
+  } catch (e) {
+    res.writeHead(502, cors); res.end('fetch failed');
+  }
+}
+
 const srv = http.createServer(async (req, r) => {
   const p = decodeURIComponent(req.url.split('?')[0]);
   if (p === '/api/redeem') return handleRedeem(req, r);
+  if (p === '/api/gutenberg') return handleGutenberg(req, r);
   let fp = path.normalize(path.join(ROOT, p === '/' ? '/index.html' : p));
   if (!fp.startsWith(ROOT) || !fs.existsSync(fp) || fs.statSync(fp).isDirectory()) { r.writeHead(404); r.end('nf'); return; }
   const st = fs.statSync(fp);

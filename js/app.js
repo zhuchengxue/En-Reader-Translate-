@@ -1,6 +1,6 @@
 /* 主控逻辑：书架 / 导入 / 阅读 / 生词本 / 设置 / 统计 */
 (() => {
-  const APP_VER = '2026-07-28.7'; // 前端版本号：诊断面板可见 + index.html 版本守卫比对
+  const APP_VER = '2026-07-28.8'; // 前端版本号：诊断面板可见 + index.html 版本守卫比对
   window.APP_VER = APP_VER; // 暴露给 index.html 内联守卫脚本做版本一致性校验
   const $ = s => document.querySelector(s);
   const $$ = s => Array.from(document.querySelectorAll(s));
@@ -56,6 +56,7 @@
     document.body.dataset.view = v;
     $('#view-shelf').classList.toggle('hidden', v !== 'shelf');
     $('#view-vocab').classList.toggle('hidden', v !== 'vocab');
+    $('#view-store').classList.toggle('hidden', v !== 'store');
     $('#view-reader').classList.toggle('hidden', v !== 'reader');
   }
 
@@ -361,6 +362,40 @@
     return url;
   }
 
+  /* 把一本书的二进制（ArrayBuffer）解析元数据/封面并写入 IndexedDB。
+   * importFiles（本地文件）与古腾堡下载都复用它，保证入库逻辑唯一。 */
+  async function addBookFromBuffer(buf, opts) {
+    const ext = opts.ext;
+    /* 按需加载重型解析库（epub.js / pdf.js），取元数据与封面要用；命中缓存 Promise 不重复下载 */
+    if (ext === 'epub' || ext === 'pdf') { try { await ensureVendor(ext); } catch (e) { console.error(e); } }
+    const id = 'b' + Date.now() + Math.random().toString(36).slice(2, 7);
+    let title = opts.titleHint || (opts.name ? opts.name.replace(/\.[^.]+$/, '') : '未命名');
+    let author = opts.authorHint || '';
+    let cover = opts.coverHint || null;
+    if (ext === 'epub') {
+      try {
+        const bk = ePub(buf.slice(0));
+        await withTimeout(bk.ready, 8000, 'epub-ready');
+        try {
+          const meta = await withTimeout(bk.loaded.metadata, 5000, 'epub-meta');
+          if (meta.title) title = meta.title;
+          author = meta.creator || author;
+        } catch (e) {}
+        try {
+          const cu = await withTimeout(bk.coverUrl(), 5000, 'epub-cover');
+          if (cu) cover = await blobUrlToDataUrl(cu);
+        } catch (e) {}
+        bk.destroy();
+      } catch (e) {}
+    }
+    if (ext === 'pdf') {
+      try { cover = await withTimeout(pdfCover(buf.slice(0)), 10000, 'pdf-cover'); } catch (e) {}
+    }
+    await DB.put('files', { id, data: buf });
+    await DB.put('books', { id, type: ext, title, author, cover, fileName: opts.name || title, addedAt: Date.now(), progress: 0, location: null, source: opts.source || 'import' });
+    return id;
+  }
+
   async function importFiles(files) {
     let ok = 0;
     for (const f of files) {
@@ -368,33 +403,8 @@
       if (!['epub', 'txt', 'pdf'].includes(ext)) { toast('不支持的格式：' + f.name); continue; }
       loading(true, '正在导入 ' + f.name);
       try {
-        /* 按需加载重型解析库（epub.js / pdf.js），导入时就要用它们取元数据与封面，
-         * 故在这里也 await 一次；openBook 会命中已缓存的 Promise，不会重复下载。 */
-        if (ext === 'epub' || ext === 'pdf') { try { await ensureVendor(ext); } catch (e) { console.error(e); } }
         const buf = await f.arrayBuffer();
-        const id = 'b' + Date.now() + Math.random().toString(36).slice(2, 7);
-        let title = f.name.replace(/\.[^.]+$/, ''), author = '', cover = null;
-        if (ext === 'epub') {
-          try {
-            const bk = ePub(buf.slice(0));
-            await withTimeout(bk.ready, 8000, 'epub-ready');
-            try {
-              const meta = await withTimeout(bk.loaded.metadata, 5000, 'epub-meta');
-              if (meta.title) title = meta.title;
-              author = meta.creator || '';
-            } catch (e) {}
-            try {
-              const cu = await withTimeout(bk.coverUrl(), 5000, 'epub-cover');
-              if (cu) cover = await blobUrlToDataUrl(cu);
-            } catch (e) {}
-            bk.destroy();
-          } catch (e) {}
-        }
-        if (ext === 'pdf') {
-          try { cover = await withTimeout(pdfCover(buf.slice(0)), 10000, 'pdf-cover'); } catch (e) {}
-        }
-        await DB.put('files', { id, data: buf });
-        await DB.put('books', { id, type: ext, title, author, cover, fileName: f.name, addedAt: Date.now(), progress: 0, location: null });
+        await addBookFromBuffer(buf, { ext, name: f.name });
         ok++;
       } catch (e) {
         console.error(e);
@@ -404,6 +414,84 @@
     }
     if (ok) toast('成功导入 ' + ok + ' 本书');
     renderShelf();
+  }
+
+  /* ---------- 古腾堡书城 ---------- */
+  let storePage = 1, storeTerm = '', storeHasMore = false, storeLoading = false;
+
+  function openStore() {
+    /* 书城本身是免费公版书来源，不拦；只有「打开书」才受试用/激活闸门限制 */
+    switchView('store');
+    $('#store-search').value = '';
+    $('#store-results').innerHTML = '';
+    $('#store-empty').classList.add('hidden');
+    $('#store-status').classList.add('hidden');
+    storePage = 1; storeTerm = ''; storeHasMore = false;
+    loadStore(true);
+  }
+  function closeStore() { switchView('shelf'); renderShelf(); }
+
+  let storeTimer = null;
+  function onStoreInput() {
+    clearTimeout(storeTimer);
+    storeTimer = setTimeout(() => { storeTerm = $('#store-search').value; storePage = 1; loadStore(true); }, 450);
+  }
+  async function loadStore(reset) {
+    if (storeLoading) return;
+    storeLoading = true;
+    $('#store-more').classList.add('hidden');
+    if (reset) $('#store-results').innerHTML = '';
+    const status = $('#store-status');
+    status.textContent = '加载中…'; status.classList.remove('hidden');
+    try {
+      const { results, next } = await Gutenberg.search(storeTerm, storePage);
+      const grid = $('#store-results');
+      $('#store-empty').classList.toggle('hidden', !(reset && !results.length));
+      for (const b of results) renderStoreCard(b, grid);
+      storeHasMore = next;
+      $('#store-more').classList.toggle('hidden', !next);
+      if (results.length) status.classList.add('hidden');
+    } catch (e) {
+      status.textContent = (e && e.message ? e.message : '加载失败') + '（本地请运行 serve.js，或部署到 Cloudflare 后使用）';
+    } finally {
+      storeLoading = false;
+    }
+  }
+  function renderStoreCard(b, grid) {
+    const fmt = Gutenberg.bestFormat(b.formats);
+    const card = document.createElement('div');
+    card.className = 'store-card';
+    const coverHtml = b.cover
+      ? '<img src="' + b.cover + '" alt="" onerror="this.remove()">'
+      : '<div class="cover-placeholder"><span class="cp-type">EBOOK</span><span class="cp-title">' + esc(b.title) + '</span></div>';
+    const author = b.authors.join(', ');
+    const dlLabel = fmt ? (fmt.ext === 'epub' ? '下载 EPUB' : '下载 TXT') : '无可用格式';
+    card.innerHTML =
+      '<div class="book-cover">' + coverHtml + '</div>' +
+      '<div class="book-name">' + esc(b.title) + '</div>' +
+      (author ? '<div class="book-author">' + esc(author) + '</div>' : '') +
+      '<button class="store-dl" ' + (fmt ? '' : 'disabled') + '>' + dlLabel + '</button>';
+    const btn = card.querySelector('.store-dl');
+    if (fmt) {
+      btn.addEventListener('click', async () => {
+        if (btn.disabled) return;
+        btn.disabled = true; btn.textContent = '下载中…';
+        try {
+          const buf = await Gutenberg.download(fmt.url);
+          await addBookFromBuffer(buf, {
+            ext: fmt.ext, name: b.title + '.' + fmt.ext,
+            titleHint: b.title, authorHint: author, coverHint: b.cover, source: 'gutenberg'
+          });
+          btn.textContent = '✓ 已加入书架'; btn.classList.add('done');
+          toast('已下载《' + b.title + '》到书架');
+          renderShelf();
+        } catch (e) {
+          btn.disabled = false; btn.textContent = dlLabel;
+          toast('下载失败：' + (e && e.message ? e.message : e));
+        }
+      });
+    }
+    grid.appendChild(card);
   }
 
   /* ---------- 打开 / 关闭图书 ---------- */
@@ -823,6 +911,17 @@
     on('#btn-vocab', 'click', () => { switchView('vocab'); renderVocab(); });
     on('#btn-vocab-back', 'click', () => { switchView('shelf'); renderShelf(); });
     on('#btn-vocab-export', 'click', exportVocab);
+
+    /* 古腾堡书城 */
+    on('#btn-store', 'click', openStore);
+    on('#btn-store-back', 'click', closeStore);
+    on('#store-search', 'input', onStoreInput);
+    on('#store-search', 'keydown', (e) => {
+      if (e.key === 'Enter') { clearTimeout(storeTimer); storeTerm = e.target.value; storePage = 1; loadStore(true); }
+      e.stopPropagation();
+    });
+    on('#store-search-btn', 'click', () => { storeTerm = $('#store-search').value; storePage = 1; loadStore(true); });
+    on('#store-more', 'click', () => { if (storeHasMore && !storeLoading) { storePage++; loadStore(false); } });
 
     /* 兑换码激活 */
     on('#activate-submit', 'click', submitActivate);

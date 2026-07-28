@@ -125,6 +125,20 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
 .vocab-meta { font-size: 11px; color: var(--text2); margin-top: 4px; }
 .vocab-ops { display: flex; gap: 4px; flex-shrink: 0; }
 
+/* ===== 古腾堡书城 ===== */
+.store-bar { display: flex; gap: 10px; padding: 16px 40px 8px; }
+.store-bar .search-input { flex: 1; min-width: 0; height: 42px; padding: 0 16px; border-radius: 12px; border: 1px solid var(--border); background: var(--bg2); color: var(--text); font-size: 14px; outline: none; transition: all .15s; }
+.store-bar .search-input::placeholder { color: var(--text2); opacity: .7; }
+.store-bar .search-input:focus { background: var(--bg3); border-color: var(--accent); box-shadow: 0 0 0 3px var(--hl); }
+.store-status { text-align: center; font-size: 13px; color: var(--text2); padding: 24px 16px; }
+.store-card { position: relative; cursor: default; content-visibility: auto; contain-intrinsic-size: auto 260px; }
+.store-card .book-author { font-size: 11px; color: var(--text2); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.store-dl { width: 100%; margin-top: 8px; padding: 8px 0; border-radius: 8px; font-size: 12px; background: var(--accent); color: #fff; border: none; transition: filter .15s; }
+.store-dl:hover:not(:disabled) { filter: brightness(1.08); }
+.store-dl:disabled { background: var(--bg2); color: var(--text2); cursor: default; }
+.store-dl.done { background: #16a34a; color: #fff; }
+.store-more-wrap { text-align: center; padding: 10px 0 28px; }
+
 /* ===== 阅读视图 ===== */
 #view-reader { position: relative; background: var(--bg); }
 .reader-top {
@@ -409,6 +423,7 @@ body[data-theme="dark"] .set-hint.err { color: #f87171; }
 }
 @media (max-width: 640px) {
   .shelf-header, .sub-header { padding-left: 16px; padding-right: 16px; }
+  .store-bar { padding: 14px 16px 8px; }
   .shelf-grid { padding: 8px 16px 24px; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 18px 14px; }
   .vocab-list { padding: 8px 16px 24px; }
   .dict-popup { width: calc(100vw - 20px); }
@@ -438,6 +453,8 @@ body[data-theme="dark"] .set-hint.err { color: #f87171; }
 .trial-banner.hidden { display: none; }
 /* 试用条显示时把顶部内容下推，避免遮挡标题/工具栏 */
 body.trial-on .shelf-header { padding-top: 44px; }
+body.trial-on .sub-header { padding-top: 44px; }
+body.trial-on .store-bar { padding-top: 56px; }
 body.trial-on .reader-top { top: 34px; }
 
 /* ===== 兑换码激活模态 ===== */
