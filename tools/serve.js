@@ -5,17 +5,39 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const { webcrypto } = require('crypto');
 const ROOT = path.resolve(__dirname, '..');
 const PORT = process.env.PORT || 9000;
 const MIME = { '.html':'text/html; charset=utf-8', '.js':'text/javascript; charset=utf-8', '.css':'text/css; charset=utf-8', '.json':'application/json', '.txt':'text/plain; charset=utf-8', '.png':'image/png', '.jpg':'image/jpeg', '.svg':'image/svg+xml', '.woff':'font/woff', '.woff2':'font/woff2' };
 
-/* 注意：本服务器只处理静态文件，不提供 /api/translate。
- * 本地开发时翻译服务自然回退到 Lingva / MyMemory 真实链路；
- * 部署到 Cloudflare Pages 后 Pages Functions 才提供 /api/translate。
- * 测试脚本（tools/regression.js）自带 mock server，不要在这里加 mock。 */
+/* 本地开发用的 /api/redeem：用真实私钥给任意合法格式兑换码签名，方便浏览器端实测激活流程。
+ * ⚠️ 仅供本地开发/测试，绝不随 Cloudflare Pages 部署（生产由 functions/api/redeem.js 走 KV 校验）。 */
+async function handleRedeem(req, res) {
+  if (req.method !== 'POST') { res.writeHead(405); res.end('POST only'); return; }
+  let body = {};
+  try { body = JSON.parse(await readBody(req)); } catch (e) {}
+  const code = (body.code || '').toString().trim().toUpperCase().replace(/\s+/g, '');
+  const dev = (body.dev || '').toString().slice(0, 64);
+  const cors = { 'Access-Control-Allow-Origin':'*', 'Content-Type':'application/json' };
+  if (!/^ENRD-[A-Z0-9]{4}-[A-Z0-9]{4}$/.test(code) || !dev) {
+    res.writeHead(400, cors); res.end(JSON.stringify({ error: '兑换码格式不正确' })); return;
+  }
+  let privJwk;
+  try { privJwk = JSON.parse(fs.readFileSync(path.join(ROOT, 'worker', 'keys.private.txt'), 'utf8')); }
+  catch (e) { res.writeHead(500, cors); res.end(JSON.stringify({ error: '本地未找到私钥 worker/keys.private.txt' })); return; }
+  const priv = await webcrypto.subtle.importKey('jwk', privJwk, { name: 'Ed25519' }, false, ['sign']);
+  const payload = { code, dev, iat: Date.now(), exp: Date.now() + 600 * 30 * 864e5 };
+  const data = Buffer.from(JSON.stringify(payload)).toString('base64url');
+  const sig = Buffer.from(await webcrypto.subtle.sign({ name: 'Ed25519' }, priv, Buffer.from(data, 'utf8'))).toString('base64url');
+  res.writeHead(200, cors); res.end(JSON.stringify({ token: data + '.' + sig }));
+}
+function readBody(req) {
+  return new Promise((res, rej) => { let b = ''; req.on('data', c => b += c); req.on('end', () => res(b)); req.on('error', rej); });
+}
 
-const srv = http.createServer((req, r) => {
+const srv = http.createServer(async (req, r) => {
   const p = decodeURIComponent(req.url.split('?')[0]);
+  if (p === '/api/redeem') return handleRedeem(req, r);
   let fp = path.normalize(path.join(ROOT, p === '/' ? '/index.html' : p));
   if (!fp.startsWith(ROOT) || !fs.existsSync(fp) || fs.statSync(fp).isDirectory()) { r.writeHead(404); r.end('nf'); return; }
   const st = fs.statSync(fp);

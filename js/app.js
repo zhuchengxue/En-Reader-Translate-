@@ -1,6 +1,6 @@
 /* 主控逻辑：书架 / 导入 / 阅读 / 生词本 / 设置 / 统计 */
 (() => {
-  const APP_VER = '2026-07-28.6'; // 前端版本号：诊断面板可见 + index.html 版本守卫比对
+  const APP_VER = '2026-07-28.7'; // 前端版本号：诊断面板可见 + index.html 版本守卫比对
   window.APP_VER = APP_VER; // 暴露给 index.html 内联守卫脚本做版本一致性校验
   const $ = s => document.querySelector(s);
   const $$ = s => Array.from(document.querySelectorAll(s));
@@ -410,6 +410,12 @@
   async function openBook(id) {
     let book = null;
     try {
+      /* 授权闸门：未激活且试用耗尽 -> 拦截打开并弹激活模态 */
+      if (window.License && License.gateEnabled() && !(await License.isActivated())) {
+        if (License.getTrialRemaining() <= 0) { openActivate(); return; }
+        License.useTrial();
+        updateTrialBanner();
+      }
       book = await DB.get('books', id);
       const file = await DB.get('files', id);
       if (!book || !file) {
@@ -583,6 +589,70 @@
   function closeSettings() { $('#settings-panel').classList.remove('open'); $('#settings-mask').classList.add('hidden'); }
   function closeProxyHelp() { $('#proxy-help-panel').classList.remove('open'); $('#proxy-help-mask').classList.add('hidden'); }
 
+  /* ---------- 兑换码激活 / 试用限次 ---------- */
+  function openActivate() {
+    $('#activate-modal').classList.add('open');
+    $('#activate-mask').classList.remove('hidden');
+    const inp = $('#activate-input');
+    inp.value = '';
+    $('#activate-error').classList.add('hidden');
+    setTimeout(() => inp.focus(), 50);
+  }
+  function closeActivate() {
+    $('#activate-modal').classList.remove('open');
+    $('#activate-mask').classList.add('hidden');
+  }
+  async function updateTrialBanner() {
+    const banner = $('#trial-banner');
+    if (!banner) return;
+    const show = !!(window.License && License.gateEnabled() && !(await License.isActivated()));
+    if (show) {
+      const rem = License.getTrialRemaining();
+      banner.textContent = '试用剩余 ' + rem + ' 次 · 输入兑换码解锁完整版';
+      banner.classList.remove('hidden');
+      document.body.classList.add('trial-on');
+    } else {
+      banner.classList.add('hidden');
+      document.body.classList.remove('trial-on');
+    }
+  }
+  async function submitActivate() {
+    const inp = $('#activate-input');
+    const err = $('#activate-error');
+    const btn = $('#activate-submit');
+    const code = (inp.value || '').trim();
+    if (!code) { err.textContent = '请输入兑换码'; err.classList.remove('hidden'); return; }
+    btn.disabled = true; btn.textContent = '激活中…'; err.classList.add('hidden');
+    try {
+      await License.activate(code);
+      closeActivate();
+      updateTrialBanner();
+      updateActivateStatus();
+      toast('激活成功，感谢支持！');
+    } catch (e) {
+      err.textContent = e.message || '激活失败'; err.classList.remove('hidden');
+    } finally {
+      btn.disabled = false; btn.textContent = '激活';
+    }
+  }
+  async function updateActivateStatus() {
+    const el = $('#activate-status');
+    if (!el) return;
+    if (window.License && await License.isActivated()) {
+      el.textContent = '已激活 · 完整版'; el.className = 'set-hint set-ok';
+    } else if (window.License && License.gateEnabled()) {
+      el.textContent = '未激活 · 试用剩余 ' + License.getTrialRemaining() + ' 次'; el.className = 'set-hint';
+    } else {
+      el.textContent = ''; el.className = 'set-hint';
+    }
+  }
+  async function initLicense() {
+    if (!window.License || !License.gateEnabled()) return; // 测试环境不拦截
+    if (await License.isActivated()) { updateTrialBanner(); return; }
+    updateTrialBanner();
+    if (License.getTrialRemaining() <= 0) openActivate();
+  }
+
   /* ---------- 运行自检 / 诊断 ---------- */
   function closeDiag() { $('#diag-panel').classList.add('hidden'); $('#diag-mask').classList.add('hidden'); }
 
@@ -753,6 +823,13 @@
     on('#btn-vocab', 'click', () => { switchView('vocab'); renderVocab(); });
     on('#btn-vocab-back', 'click', () => { switchView('shelf'); renderShelf(); });
     on('#btn-vocab-export', 'click', exportVocab);
+
+    /* 兑换码激活 */
+    on('#activate-submit', 'click', submitActivate);
+    on('#activate-cancel', 'click', closeActivate);
+    on('#activate-mask', 'click', closeActivate);
+    on('#activate-input', 'keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); submitActivate(); } });
+    on('#btn-activate', 'click', openActivate);
 
     /* 拖拽导入 */
     let dragDepth = 0;
@@ -969,7 +1046,10 @@
       updateTypoSegs();
       updateFontLabel();
       updatePageModeBtn();
+      updateActivateStatus();
     } catch (e) { console.error('ui-init error', e); }
+    /* 授权检查：未激活提示试用剩余；试用耗尽弹激活模态（仅真实浏览器，测试环境不拦） */
+    try { await initLicense(); } catch (e) { console.error('license init error', e); }
     renderShelf();
     /* 自动恢复上次打开的书（含阅读位置，已存于 books.location），刷新不再关闭 */
     try {

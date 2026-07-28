@@ -8,8 +8,8 @@
 - 书籍存在**每个访客自己的浏览器**（IndexedDB），互不影响、不上传，天然多用户。
 - 翻译链路兜底：`/api/translate` → Lingva → MyMemory；某条挂了自动切换。
 
-> ⚠️ 当前 GitHub 仓库里文件位于 `英文网页阅读器/` 子目录下（上传时整文件夹拖进去了）。
-> 下面两种方式都按这个结构给了对应设置，照做即可，无需改仓库结构。
+> ⚠️ 当前 GitHub 仓库根目录即应用根（`index.html` / `js` / `css` / `functions` … 同处根目录）。
+> 下面两种方式的根目录都填仓库根（`/`），构建命令与输出目录留空。
 
 ---
 
@@ -75,6 +75,20 @@ npx wrangler pages deploy . --project-name en-reader
 3. 在阅读器 **设置 → 翻译代理** 填入该地址 → 点「测试」变绿即生效。
 
 部署态的 `/api/translate` 优先级低于「设置里填写的自建代理」，所以两种方式可并存：默认用内置、想更快可填自己的 Worker。
+
+---
+
+## 兑换码授权（收费模式，可选）
+
+若要把本项目作为收费产品（买断制兑换码），需在 Cloudflare 侧配置校验后端：
+
+1. **生成密钥**：`node tools/keys.js` → 私钥写入 `worker/keys.private.txt`（已在 `.gitignore`，切勿提交），公钥已内嵌 `js/license.js`。
+2. **KV 命名空间**：Pages 后台建 KV 命名空间，绑定变量名 `CODES`。
+3. **环境变量**：设置 `REDEEM_PRIVATE_KEY` = 私钥文件完整 JSON。
+4. **兑换码**：`node tools/gen-codes.js 20`（配 `CLOUDFLARE_API_TOKEN`/`ACCOUNT_ID`/`KV_NAMESPACE_ID` 直写 KV，否则生成 `codes.json` 用 `wrangler kv bulk put` 写入）。
+5. 用户端「设置 → 输入兑换码」填入 `ENRD-XXXX-XXXX` 即激活；未激活可试用 3 次打开书本。
+
+> 本地 `tools/serve.js` 内置 `/api/redeem`（用真实私钥签名，仅本地开发，不随 Pages 部署），可先在浏览器走通激活流程再上生产。
 
 ---
 

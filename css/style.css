@@ -427,3 +427,37 @@ body[data-theme="dark"] .set-hint.err { color: #f87171; }
   *, *::before, *::after { transition-duration: .001ms !important; animation-duration: .001ms !important; animation-iteration-count: 1 !important; }
   .txt-content { transition: none !important; }
 }
+
+/* ===== 试用提示条 ===== */
+.trial-banner {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 70;
+  background: linear-gradient(90deg, #f59e0b, #ef8c0b); color: #fff;
+  font-size: 13px; text-align: center; padding: 7px 12px;
+  box-shadow: 0 2px 10px rgba(0,0,0,.18);
+}
+.trial-banner.hidden { display: none; }
+/* 试用条显示时把顶部内容下推，避免遮挡标题/工具栏 */
+body.trial-on .shelf-header { padding-top: 44px; }
+body.trial-on .reader-top { top: 34px; }
+
+/* ===== 兑换码激活模态 ===== */
+.activate-modal {
+  position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%) scale(.96);
+  width: min(420px, calc(100vw - 28px)); z-index: 75;
+  background: var(--bg3); border: 1px solid var(--border); border-radius: 16px;
+  box-shadow: 0 20px 60px var(--shadow); padding: 22px;
+  opacity: 0; pointer-events: none; transition: all .2s;
+  display: flex; flex-direction: column; gap: 12px;
+}
+.activate-modal.open { opacity: 1; pointer-events: auto; transform: translate(-50%, -50%) scale(1); }
+.activate-modal h3 { margin: 0; font-size: 18px; }
+.activate-modal .set-hint { margin: 0; }
+.activate-input { text-transform: uppercase; letter-spacing: 1px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.activate-error { color: #ef4444; font-size: 13px; }
+.activate-error.hidden { display: none; }
+.activate-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 4px; }
+.set-ok { color: #16a34a !important; font-weight: 600; }
+.tool-btn-accent { background: var(--accent); color: #fff; border-color: var(--accent); }
+.tool-btn-accent:hover { filter: brightness(1.06); }
+.tool-btn:disabled { opacity: .6; cursor: default; }
+

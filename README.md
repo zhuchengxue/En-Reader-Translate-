@@ -85,8 +85,30 @@ python3 -m http.server 9000
 
 ## 版本与诊断
 
-当前版本 `2026-07-28.5`。若遇到按钮无响应等异常，可点书架上的「工具」按钮打开诊断面板，查看「前端版本」是否与最新版本一致（不一致即浏览器在跑旧缓存，硬刷新 Ctrl+Shift+R 即可）。
+当前版本 `2026-07-28.7`。若遇到按钮无响应等异常，可点书架上的「工具」按钮打开诊断面板，查看「前端版本」是否与最新版本一致（不一致即浏览器在跑旧缓存，硬刷新 Ctrl+Shift+R 即可）。
+
+## 商业授权（兑换码 / 买断制）
+
+本项目支持「兑换码」收费模式：未激活可试用 3 次打开书本，输入有效兑换码后解锁完整版（买断制，一次付费永久使用）。
+
+### 安全模型
+
+- 兑换码由服务端（Cloudflare Pages Function `functions/api/redeem.js`）校验，**无法在前端伪造**。
+- 令牌用 **Ed25519** 签名：服务端持私钥，前端只内嵌公钥验签。即使拿不到私有仓库源码，也无法伪造能通过验签的令牌。
+- 每个兑换码限绑定 3 台设备（KV 记录设备列表），防一码共享。
+
+### 服务端配置（部署到 Cloudflare Pages 后）
+
+1. 生成密钥对：`node tools/keys.js`，私钥写入 `worker/keys.private.txt`（已在 `.gitignore`，**切勿提交**），公钥打印出来已内嵌进 `js/license.js`。
+2. Pages 后台创建 **KV 命名空间**，绑定变量名 `CODES`。
+3. 设置环境变量 `REDEEM_PRIVATE_KEY` = 私钥文件内容（即 `worker/keys.private.txt` 的完整 JSON）。
+4. 生成兑换码：`node tools/gen-codes.js 20`（配 `CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID` / `KV_NAMESPACE_ID` 环境变量时直接写入 KV；否则生成 `codes.json` 用 `wrangler kv bulk put` 手动写入）。
+5. 用户端：阅读器「设置 → 输入兑换码」填入 `ENRD-XXXX-XXXX` 即激活。
+
+### 本地开发自测
+
+本地 `tools/serve.js` 内置 `/api/redeem`（用真实私钥签名，仅本地用，不随 Pages 部署），可直接在浏览器走通激活流程。`node tools/license-test.js` 验证签名/验签；`node tools/activate-test.js` 跑完整激活 E2E（需先启动 serve.js）。
 
 ## 许可证
 
-仅供个人学习使用。
+本项目为可商用产品。源码授权方式见仓库许可设置；付费功能通过兑换码激活。

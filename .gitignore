@@ -19,3 +19,8 @@ Thumbs.db
 .vscode/
 .idea/
 *.code-workspace
+
+# 授权私钥 / 生成的兑换码（严禁提交，否则等于公开可伪造）
+worker/keys.private.txt
+codes.json
+tools/dev-key.json
