@@ -7,6 +7,7 @@ class EpubReader {
     this.pageMode = opts.pageMode || 'single';
     this.lineHeight = opts.lineHeight || 1.8;
     this.theme = opts.theme || 'light';
+    this.pageAnim = opts.pageAnim || 'slide';
     this.handlers = opts.handlers || {};
     this.onProgress = null;
     this.currentCfi = null;
@@ -88,7 +89,7 @@ class EpubReader {
       const doc = contents.document;
       /* 注入瞬时高亮样式（点击单词的 .w-active 由 Interaction.flashWord 临时创建，无需常驻 span） */
       const st = doc.createElement('style');
-      st.textContent = '.w-active{background:rgba(59,130,246,.22);border-radius:2px}';
+      st.textContent = '.w-active{background:rgba(59,130,246,.22);border-radius:2px}.tts-hl{background:rgba(59,130,246,.24);border-radius:2px}';
       doc.head.appendChild(st);
       const offsetFn = () => {
         try {
@@ -109,6 +110,13 @@ class EpubReader {
       this.currentCfi = loc.start.cfi;
       this._loc = loc;
       this._emitProgress();
+      /* 翻页动画（滑动 / 淡入淡出），none 时不加 */
+      if (this.pageAnim && this.pageAnim !== 'none' && this.holder) {
+        const h = this.holder;
+        h.classList.remove('ep-anim-slide', 'ep-anim-fade');
+        void h.offsetWidth;
+        h.classList.add(this.pageAnim === 'fade' ? 'ep-anim-fade' : 'ep-anim-slide');
+      }
     });
 
     this.rendition.display(cfi);
@@ -159,6 +167,38 @@ class EpubReader {
 
   getPageText() { return this._visibleText(false); }
   getCurrentText() { return this._visibleText(true); }
+
+  /* 朗读跟随文字：把当前可见块切成句子片段，返回 [{text, nodes}]（在 iframe 文档内创建 span） */
+  getPageSegments() {
+    const segs = [];
+    try {
+      const contents = this.rendition.getContents();
+      if (!contents || !contents.length) return segs;
+      const doc = contents[0].document;
+      const win = contents[0].window;
+      if (window.cleanupTtsSpans) cleanupTtsSpans(doc.body, doc);
+      const blocks = doc.body.querySelectorAll('p, li, h1, h2, h3, h4, blockquote, div');
+      for (const el of blocks) {
+        const r = el.getBoundingClientRect();
+        if (!(r.width && r.bottom > 0 && r.top < win.innerHeight)) continue;
+        if (el.children.length && el.querySelector('p, li')) continue; // 跳过含块级子元素的容器
+        const spans = window.buildSentenceSpans ? buildSentenceSpans(el, doc) : [];
+        for (const s of spans) segs.push({ text: (s.textContent || '').trim(), nodes: [s] });
+      }
+    } catch (e) {}
+    return segs;
+  }
+
+  clearTts() {
+    try {
+      const contents = this.rendition.getContents();
+      if (contents && contents.length) {
+        contents[0].document.querySelectorAll('.tts-hl').forEach(n => { try { n.classList.remove('tts-hl'); } catch (e) {} });
+      }
+    } catch (e) {}
+  }
+
+  setPageAnim(a) { this.pageAnim = a; }
 
   /* ---------- 书内全文搜索 ----------
    * 逐章加载 spine → section.find（epub.js 内部已做小写匹配）→ 卸载释放内存。

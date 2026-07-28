@@ -256,26 +256,32 @@ async function clearSentPopup(page) {
   const bmClosed = await page.evaluate(() => !document.querySelector('#bookmark-drawer').classList.contains('open'));
   check('书签跳转后关闭抽屉', bmClosed);
 
-  // 朗读：读此段 + 连续朗读（会话内静默 TTS，仅验证触发与按钮态切换）
+  // 朗读：连续朗读（会话内静默 TTS，仅验证触发 / 按钮态 / 跟随高亮）
   await page.evaluate(() => {
     window.__speak = 0;
     window.speechSynthesis.speak = () => { window.__speak++; };
     const g = window.speechSynthesis.getVoices.bind(window.speechSynthesis);
     window.speechSynthesis.getVoices = () => { const v = g(); return (v && v.length) ? v : [{ name: 'Google US English', lang: 'en-US' }]; };
   });
-  await page.evaluate(() => document.querySelector('#btn-read-para').click());
-  await page.waitForTimeout(300);
-  const speakPara = await page.evaluate(() => window.__speak);
-  check('读此段触发 TTS', speakPara > 0, 'speak=' + speakPara);
-  await page.evaluate(() => { window.__speak = 0; });
   await page.evaluate(() => document.querySelector('#btn-read').click());
-  await page.waitForTimeout(300);
+  await page.waitForTimeout(400);
   const reading = await page.evaluate(() => ({ txt: document.querySelector('#btn-read').textContent, speak: window.__speak }));
   check('连续朗读开始(按钮变停止+TTS)', /停止/.test(reading.txt) && reading.speak > 0, JSON.stringify(reading));
+  const hlCount = await page.evaluate(() => document.querySelectorAll('#reader-container .tts-hl, #reader-container .tts-sent').length);
+  check('朗读跟随文字(高亮节点)', hlCount > 0, 'hl=' + hlCount);
   await page.evaluate(() => document.querySelector('#btn-read').click());
   await page.waitForTimeout(200);
   const stopped = await page.evaluate(() => document.querySelector('#btn-read').textContent);
   check('连续朗读可停止', /朗读/.test(stopped), 'txt=' + stopped);
+
+  // 翻页效果设置 + 全屏退出浮钮
+  const paSeg = await page.evaluate(() => !!document.querySelector('#pageanim-seg'));
+  check('翻页效果设置存在', paSeg);
+  const fsFab = await page.evaluate(() => !!document.querySelector('#fs-exit-fab'));
+  check('全屏退出浮钮存在', fsFab);
+  await page.evaluate(() => { const b = [...document.querySelectorAll('#pageanim-seg button')].find(x => x.dataset.pa === 'fade'); b && b.click(); });
+  const paStored = await page.evaluate(() => (JSON.parse(localStorage.getItem('en-reader-settings') || '{}')).pageAnim);
+  check('翻页效果可切换(fade)', paStored === 'fade', 'stored=' + paStored);
 
   // EPUB 单击（iframe 坐标命中）
   await page.keyboard.press('Escape'); await page.waitForTimeout(200);

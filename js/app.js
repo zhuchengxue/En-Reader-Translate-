@@ -1,6 +1,6 @@
 /* 主控逻辑：书架 / 导入 / 阅读 / 生词本 / 设置 / 统计 */
 (() => {
-  const APP_VER = '2026-07-28.11'; // 前端版本号：诊断面板可见 + index.html 版本守卫比对
+  const APP_VER = '2026-07-28.12'; // 前端版本号：诊断面板可见 + index.html 版本守卫比对
   window.APP_VER = APP_VER; // 暴露给 index.html 内联守卫脚本做版本一致性校验
   const $ = s => document.querySelector(s);
   const $$ = s => Array.from(document.querySelectorAll(s));
@@ -11,6 +11,57 @@
     if (el) el.addEventListener(ev, fn, opts);
     else console.warn('[bind] 元素缺失，跳过绑定:', sel);
   };
+
+  /* ---------- 朗读跟随文字：句子切片 + 高亮清理（三阅读器共用，挂到 window 供 reader 调用） ---------- */
+  /* 把 root 内所有文本节点按英文句末标点切成句子 span（在指定 doc 中创建，兼容 iframe）。
+   * 不依赖 lookbehind，旧版移动端浏览器也能跑。 */
+  function buildSentenceSpans(root, doc) {
+    const spans = [];
+    const walker = doc.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+      acceptNode(n) {
+        if (!n.nodeValue || !n.nodeValue.trim()) return NodeFilter.FILTER_REJECT;
+        const p = n.parentElement;
+        if (p && (p.tagName === 'SCRIPT' || p.tagName === 'STYLE')) return NodeFilter.FILTER_REJECT;
+        return NodeFilter.FILTER_ACCEPT;
+      }
+    });
+    const tns = [];
+    while (walker.nextNode()) tns.push(walker.currentNode);
+    for (const tn of tns) {
+      const text = tn.nodeValue;
+      const parts = text.split(/([^.!?]+[.!?]+["')\]]*)/g).map(s => s.trim()).filter(Boolean);
+      const sentences = parts.length ? parts : [text.trim()];
+      const parent = tn.parentNode;
+      const frag = doc.createDocumentFragment();
+      for (const s of sentences) {
+        const span = doc.createElement('span');
+        span.className = 'tts-sent';
+        span.textContent = s + ' ';
+        frag.appendChild(span);
+        spans.push(span);
+      }
+      parent.replaceChild(frag, tn);
+    }
+    return spans;
+  }
+  /* 朗读前先清掉上一轮的句子 span，避免重复包裹导致嵌套 */
+  function cleanupTtsSpans(root, doc) {
+    if (!root) return;
+    try {
+      root.querySelectorAll('.tts-sent').forEach(sp => {
+        const t = doc.createTextNode(sp.textContent);
+        sp.parentNode.replaceChild(t, sp);
+      });
+    } catch (e) {}
+  }
+  window.buildSentenceSpans = buildSentenceSpans;
+  window.cleanupTtsSpans = cleanupTtsSpans;
+
+  /* 切换某段的高亮态（segment 携带 nodes 数组） */
+  function ttsHl(seg, on) {
+    if (!seg || !seg.nodes) return;
+    for (const n of seg.nodes) { try { n.classList.toggle('tts-hl', on); } catch (e) {} }
+  }
 
   let settings = null;
   let reader = null;
@@ -116,7 +167,7 @@
       if (!reader) return;
       if (fx < 0.3) reader.prev();
       else if (fx > 0.7) reader.next();
-      else toggleChrome();
+      else if (!document.body.classList.contains('fs-active')) toggleChrome();
     }
   };
 
@@ -501,6 +552,7 @@
     $('#bookmark-drawer').classList.add('open');
     $('#bookmark-mask').classList.remove('hidden');
     renderBookmarks();
+    setTimeout(() => { const i = $('#bm-input'); if (i) i.focus(); }, 60);
   }
   function closeBookmarks() {
     $('#bookmark-drawer').classList.remove('open');
@@ -511,7 +563,7 @@
     list.innerHTML = '';
     const bms = await DB.getBookmarks(currentBookId);
     if (!bms.length) {
-      list.innerHTML = '<div class="bm-empty">还没有书签。<br>点上方「添加当前位置」即可保存当前阅读进度。</div>';
+      list.innerHTML = '<div class="bm-empty">还没有书签。<br>在下方输入名称（可留空），点「保存」即可收藏当前位置。</div>';
       return;
     }
     for (const bm of bms) {
@@ -536,10 +588,10 @@
     if (!reader || !reader.getLocation) return;
     const loc = reader.getLocation();
     if (reader instanceof EpubReader && !loc.cfi) { toast('位置尚未就绪，稍候再试'); return; }
-    const def = '位置 · ' + (($('#page-label').textContent || '').trim() || '未命名');
-    let name = def;
-    try { const r = window.prompt('书签名称（默认：' + def + '）', def); if (r === null) return; name = r; } catch (e) {}
-    name = (name || def).toString().trim().slice(0, 60);
+    const input = $('#bm-input');
+    let name = (input && input.value || '').trim();
+    if (!name) name = '位置 · ' + (($('#page-label').textContent || '').trim() || '未命名');
+    name = name.slice(0, 60);
     const bm = {
       id: currentBookId + ':' + Date.now(),
       bookId: currentBookId,
@@ -549,6 +601,7 @@
       addedAt: Date.now()
     };
     await DB.addBookmark(bm);
+    if (input) input.value = '';
     toast('已添加书签');
     renderBookmarks();
   }
@@ -558,74 +611,86 @@
   }
 
   /* ---------- 朗读（直接驱动浏览器内置 speechSynthesis，免费无需 Key） ----------
-   * 两种模式：
-   *  - 读此段：朗读当前位置所在段落一次，不自动翻页；
-   *  - 连续朗读：朗读当前屏文本，结束后自动翻页继续，直到读完（由 TTS.onEnd 驱动）。 */
+   * 连续朗读：从【当前屏幕】开始，逐句高亮跟随文字，读完一屏自动翻页，到末页停止。
+   * 三阅读器各提供 getPageSegments() 返回 [{text, nodes}]（nodes 为要高亮的 DOM 节点），
+   * 切屏后自动重建，保证高亮永远落在可见文本上。 */
   const ttsCtl = {
     continuous: false,
     rate: 0.95,
-    _last: '', _empty: 0, _nomove: 0, _moved: false, _reloHandler: null,
-    readParagraph() {
-      if (!reader) return;
-      this.stop();
-      Promise.resolve(reader.getCurrentText ? reader.getCurrentText() : '').then(t => {
-        t = (t || '').trim();
-        if (!t) { toast('当前页无可朗读文本'); return; }
-        TTS.speak(t, this.rate);
-      }).catch(() => toast('当前页无可朗读文本'));
-    },
+    _segIdx: null,
+    _pageSegs: [],
+    _pageKey: '',
+    _lastKey: '',
+    _nomove: 0,
+    _empty: 0,
+    _moved: false,
+    _relo: null,
     startContinuous() {
       if (!reader) return;
       if (this.continuous) { this.stop(); return; }
       this.continuous = true;
-      this._last = ''; this._empty = 0; this._nomove = 0; this._moved = false;
-      this._updateBtn();
+      this._segIdx = null; this._lastKey = ''; this._nomove = 0; this._empty = 0; this._moved = false;
       /* EPUB：监听 relocated，确认翻页真的生效，避免渲染慢导致误判「读完」 */
       if (reader instanceof EpubReader && reader.rendition) {
-        this._reloHandler = () => { this._moved = true; };
-        try { reader.rendition.on('relocated', this._reloHandler); } catch (e) {}
+        this._relo = () => { this._moved = true; };
+        try { reader.rendition.on('relocated', this._relo); } catch (e) {}
       }
+      this._updateBtn();
       this._step();
     },
     stop() {
       this.continuous = false;
-      if (this._reloHandler && reader && reader.rendition) {
-        try { reader.rendition.off('relocated', this._reloHandler); } catch (e) {}
-        this._reloHandler = null;
+      if (this._pageSegs) for (const s of this._pageSegs) ttsHl(s, false);
+      if (this._relo && reader && reader.rendition) {
+        try { reader.rendition.off('relocated', this._relo); } catch (e) {}
+        this._relo = null;
       }
       TTS.stop();
+      if (reader && reader.clearTts) try { reader.clearTts(); } catch (e) {}
+      this._segIdx = null; this._pageSegs = [];
       this._updateBtn();
     },
     async _step() {
       if (!this.continuous) return;
-      let text = '';
-      try { text = reader.getPageText ? await reader.getPageText() : ''; } catch (e) {}
-      text = (text || '').trim();
-      if (!text) {
-        this._empty++;
-        if (this._empty > 4 || !this._canAdvance()) { this.stop(); if (this._empty > 4) toast('已读完'); return; }
+      if (this._segIdx == null) {
+        /* 加载当前屏的句子片段 */
+        try { this._pageSegs = reader.getPageSegments ? reader.getPageSegments() : []; } catch (e) { this._pageSegs = []; }
+        this._segIdx = 0;
+        try { this._pageKey = (reader.getPageText ? (await reader.getPageText()) : '') || ''; } catch (e) { this._pageKey = ''; }
+        if (!this._pageSegs.length) { this._emptyFail(); return; }
+        this._empty = 0;
+      }
+      if (this._segIdx >= this._pageSegs.length) {
+        /* 当前屏读完：翻页或停止 */
+        if (!this._canAdvance()) { this.stop(); toast('已读完'); return; }
+        if (this._pageKey === this._lastKey) {
+          if (reader instanceof EpubReader && !this._moved) {
+            if (++this._nomove > 4) { this.stop(); toast('已读完'); return; }
+            setTimeout(() => this._step(), 350); return;
+          }
+          this.stop(); toast('已读完'); return;
+        }
+        this._nomove = 0; this._lastKey = this._pageKey;
         this._advance();
-        setTimeout(() => this._step(), reader instanceof EpubReader ? 300 : 120);
+        this._segIdx = null;
+        setTimeout(() => this._step(), reader instanceof EpubReader ? 320 : 160);
         return;
       }
-      this._empty = 0;
-      if (text === this._last) {
-        /* 文本未变：EPUB 翻页未生效（渲染慢）则再等；否则视为真的读完 */
-        if (reader instanceof EpubReader && !this._moved) {
-          if (++this._nomove > 4) { this.stop(); toast('已读完'); return; }
-          setTimeout(() => this._step(), 350);
-          return;
-        }
-        this.stop(); toast('已读完'); return;
-      }
-      this._nomove = 0;
-      this._last = text;
-      TTS.speak(text, this.rate, () => {
+      const seg = this._pageSegs[this._segIdx];
+      ttsHl(seg, true);
+      TTS.speak(seg.text, this.rate, () => {
         if (!this.continuous) return;
-        if (!this._canAdvance()) { this.stop(); toast('已读完'); return; }
-        this._advance();
-        setTimeout(() => this._step(), reader instanceof EpubReader ? 300 : 150);
+        ttsHl(seg, false);
+        this._segIdx++;
+        this._step();
       });
+    },
+    _emptyFail() {
+      this._empty++;
+      if (this._empty > 4 || !this._canAdvance()) { this.stop(); if (this._empty > 4) toast('已读完'); return; }
+      this._advance();
+      this._segIdx = null;
+      setTimeout(() => this._step(), reader instanceof EpubReader ? 320 : 140);
     },
     _canAdvance() {
       if (!reader) return false;
@@ -679,7 +744,7 @@
       container.innerHTML = '';
       const opts = {
         fontSize: settings.fontSize, pageMode: settings.pageMode, theme: settings.theme,
-        lineHeight: settings.lineHeight, marginSize: settings.marginSize, handlers
+        lineHeight: settings.lineHeight, marginSize: settings.marginSize, pageAnim: settings.pageAnim, handlers
       };
       const Cls = book.type === 'epub' ? EpubReader : book.type === 'pdf' ? PdfReader : TxtReader;
 
@@ -999,6 +1064,10 @@
     $('#btn-pagemode').textContent = settings.pageMode === 'single' ? '双页' : '单页';
   }
 
+  function updatePageAnimSeg() {
+    $$('#pageanim-seg button').forEach(b => b.classList.toggle('on', b.dataset.pa === settings.pageAnim));
+  }
+
   /* ---------- 生词本 ---------- */
   async function renderVocab() {
     const list = (await DB.getAll('vocab')).sort((a, b) => b.addedAt - a.addedAt);
@@ -1059,6 +1128,10 @@
   }
   function syncFsBtn() {
     const b = $('#btn-fs'); if (b) b.classList.toggle('is-fs', !!fsElement());
+    const fs = !!fsElement();
+    /* 全屏=沉浸式：默认隐藏顶/底栏，不呼出工具栏；Esc / 退出按钮退出全屏 */
+    document.body.classList.toggle('fs-active', fs);
+    document.body.classList.toggle('chrome-hidden', fs);
   }
 
   function bindAll() {
@@ -1133,9 +1206,9 @@
     on('#btn-bm-close', 'click', closeBookmarks);
     on('#bookmark-mask', 'click', closeBookmarks);
     on('#btn-bm-add', 'click', addBookmark);
+    on('#bm-input', 'keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); addBookmark(); } });
 
-    /* 朗读：读此段 / 连续朗读 */
-    on('#btn-read-para', 'click', () => ttsCtl.readParagraph());
+    /* 朗读：连续朗读（从当前屏幕开始，逐句跟随高亮） */
     on('#btn-read', 'click', () => { if (ttsCtl.continuous) ttsCtl.stop(); else ttsCtl.startContinuous(); });
     on('#btn-settings', 'click', () => {
       $('#settings-panel').classList.contains('open') ? closeSettings() : openSettings();
@@ -1148,8 +1221,9 @@
       reader && reader.setPageMode && reader.setPageMode(m);
     });
 
-    /* 全屏：按钮 + 状态同步 + F 快捷键（阅读视图、非输入框） */
+    /* 全屏：按钮 + 状态同步 + F 快捷键（阅读视图、非输入框）+ 退出浮钮 */
     on('#btn-fs', 'click', toggleFullscreen);
+    on('#fs-exit-fab', 'click', toggleFullscreen);
     document.addEventListener('fullscreenchange', syncFsBtn);
     document.addEventListener('webkitfullscreenchange', syncFsBtn);
     document.addEventListener('keydown', (e) => {
@@ -1185,6 +1259,12 @@
       settings = Settings.set({ marginSize: b.dataset.mg });
       updateTypoSegs();
       reader && reader.setMargin && reader.setMargin(settings.marginSize);
+    }));
+    $$('#pageanim-seg button').forEach(b => b.addEventListener('click', () => {
+      const a = b.dataset.pa;
+      settings = Settings.set({ pageAnim: a });
+      $$('#pageanim-seg button').forEach(x => x.classList.toggle('on', x === b));
+      reader && reader.setPageAnim && reader.setPageAnim(a);
     }));
 
     /* 书内搜索 */
@@ -1338,6 +1418,7 @@
       updateTypoSegs();
       updateFontLabel();
       updatePageModeBtn();
+      updatePageAnimSeg();
       updateActivateStatus();
     } catch (e) { console.error('ui-init error', e); }
     /* 授权检查：未激活提示试用剩余；试用耗尽弹激活模态（仅真实浏览器，测试环境不拦） */

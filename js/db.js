@@ -68,7 +68,7 @@ const DB = (() => {
 /* localStorage 设置 */
 const Settings = (() => {
   const KEY = 'en-reader-settings';
-  const defaults = { theme: 'light', fontSize: 18, lineHeight: 1.9, marginSize: 'medium', clickMode: 'both', pageMode: 'single', translateProxy: '', lastBookId: '' };
+  const defaults = { theme: 'light', fontSize: 18, lineHeight: 1.9, marginSize: 'medium', clickMode: 'both', pageMode: 'single', pageAnim: 'slide', translateProxy: '', lastBookId: '' };
   let cache = null;
   return {
     get() {

@@ -7,6 +7,7 @@ class TxtReader {
     this.pageMode = opts.pageMode || 'single';
     this.lineHeight = opts.lineHeight || 1.9;
     this.marginSize = opts.marginSize || 'medium';
+    this.pageAnim = opts.pageAnim || 'slide';
     this.section = 0;
     this.page = 0;
     this.onProgress = null;
@@ -99,7 +100,19 @@ class TxtReader {
   }
 
   update() {
-    this.content.style.transform = 'translateX(' + (-this.page * this.step) + 'px)';
+    const a = this.pageAnim || 'slide';
+    const el = this.content;
+    if (a === 'none') {
+      el.style.transition = 'none';
+      el.style.opacity = '1';
+    } else if (a === 'fade') {
+      el.style.transition = 'opacity .2s ease';
+      el.style.opacity = '0';
+      requestAnimationFrame(() => requestAnimationFrame(() => { el.style.opacity = '1'; }));
+    } else {
+      el.style.transition = 'transform .26s cubic-bezier(.4,0,.2,1)';
+    }
+    el.style.transform = 'translateX(' + (-this.page * this.step) + 'px)';
     if (this.onProgress) {
       const pct = (this.section + (this.page + 1) / this.pages) / this.sections.length;
       this.onProgress({
@@ -136,6 +149,27 @@ class TxtReader {
 
   /* ---------- 书签 / 朗读 ---------- */
   getLocation() { return { section: this.section, page: this.page }; }
+
+  /* 朗读跟随文字：把当前屏幕可见段落切成句子片段，返回 [{text, nodes}] */
+  getPageSegments() {
+    const segs = [];
+    if (!this.content) return segs;
+    const vp = this.viewport.getBoundingClientRect();
+    if (window.cleanupTtsSpans) cleanupTtsSpans(this.content, document);
+    for (const p of this.content.children) {
+      const r = p.getBoundingClientRect();
+      if (!(r.width && r.right > vp.left && r.left < vp.right && r.bottom > vp.top && r.top < vp.bottom)) continue;
+      const spans = window.buildSentenceSpans ? buildSentenceSpans(p, document) : [];
+      for (const s of spans) segs.push({ text: (s.textContent || '').trim(), nodes: [s] });
+    }
+    return segs;
+  }
+
+  clearTts() {
+    if (this.content) this.content.querySelectorAll('.tts-hl').forEach(n => { try { n.classList.remove('tts-hl'); } catch (e) {} });
+  }
+
+  setPageAnim(a) { this.pageAnim = a; }
 
   /* 当前屏幕可见段落文本（连续朗读用） */
   getPageText() {

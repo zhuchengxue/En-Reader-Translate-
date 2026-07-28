@@ -4,6 +4,7 @@ class PdfReader {
     this.container = container;
     this.buffer = buffer;
     this.pageMode = opts.pageMode || 'single';
+    this.pageAnim = opts.pageAnim || 'slide';
     this.handlers = opts.handlers || {};
     this.onProgress = null;
     this.page = 1;
@@ -128,6 +129,10 @@ class PdfReader {
         wrap.appendChild(tl);
         this.stage.appendChild(wrap);
       }
+      /* 翻页动画（滑动 / 淡入淡出），none 时不加 */
+      const a = this.pageAnim || 'slide';
+      this.stage.classList.remove('pf-anim-slide', 'pf-anim-fade');
+      if (a !== 'none') { void this.stage.offsetWidth; this.stage.classList.add(a === 'fade' ? 'pf-anim-fade' : 'pf-anim-slide'); }
       this._emitProgress();
       this._prefetch(boxW, boxH, slotW, dpr);
     } finally {
@@ -247,6 +252,36 @@ class PdfReader {
 
   async getPageText() { return await this._pageText(this.page); }
   async getCurrentText() { return await this._pageText(this.page); }
+
+  /* 朗读跟随文字：把当前页文本层的整词（.w）按句末标点分组，返回 [{text, nodes}] */
+  getPageSegments() {
+    const segs = [];
+    const tl = this.stage.querySelector('.textLayer');
+    if (!tl) return segs;
+    const words = Array.from(tl.querySelectorAll('.w'));
+    if (!words.length) return segs;
+    let cur = [];
+    const flush = () => {
+      if (cur.length) {
+        const text = cur.map(w => (w.textContent || '').trim()).join(' ').replace(/\s+/g, ' ').trim();
+        if (text) segs.push({ text, nodes: cur.slice() });
+        cur = [];
+      }
+    };
+    for (const w of words) {
+      cur.push(w);
+      const t = (w.textContent || '').trim();
+      if (/[.!?]["')\]]?$/.test(t)) flush();
+    }
+    flush();
+    return segs;
+  }
+
+  clearTts() {
+    this.stage.querySelectorAll('.w.tts-hl').forEach(n => { try { n.classList.remove('tts-hl'); } catch (e) {} });
+  }
+
+  setPageAnim(a) { this.pageAnim = a; }
 
   /* ---------- 书内全文搜索 ----------
    * 首次搜索时逐页提取文本并缓存（仅字符串，内存可控），之后的搜索直接命中缓存。
