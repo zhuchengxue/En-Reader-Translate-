@@ -192,6 +192,16 @@ async function clearSentPopup(page) {
   const pos2 = await page.evaluate(() => { const r = document.querySelector('#dict-popup').getBoundingClientRect(); return { top: Math.round(r.top), left: Math.round(r.left) }; });
   check('词典卡片不跳动(位置稳定)', pos1.top === pos2.top && pos1.left === pos2.left, JSON.stringify({ pos1, pos2 }));
 
+  // 负向回归：点击左侧页边距空白处【不得】触发翻译（揪出「点哪都翻译」回潮）
+  const blankPt = await page.evaluate(() => {
+    const r = document.querySelector('#reader-container').getBoundingClientRect();
+    return { x: Math.round(r.left) + 6, y: Math.round(r.top) + Math.round(r.height / 2) };
+  });
+  await page.mouse.click(blankPt.x, blankPt.y);
+  await page.waitForTimeout(300);
+  const blankDictHidden = await page.evaluate(() => document.querySelector('#dict-popup').classList.contains('hidden'));
+  check('TXT 点空白不翻译(页边距)', blankDictHidden, 'hidden=' + blankDictHidden);
+
   // 双击单词：自动选中整句 + 句子翻译 + 词在译文内联加粗
   await page.keyboard.press('Escape'); await page.waitForTimeout(200);
   await clearSentPopup(page);

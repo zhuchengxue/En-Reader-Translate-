@@ -7,7 +7,7 @@
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%93%96%3C/text%3E%3C/svg%3E">
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#3b82f6">
-<link rel="stylesheet" href="css/style.css?v=2026-07-28.5">
+<link rel="stylesheet" href="css/style.css?v=2026-07-28.6">
 </head>
 <body data-theme="light" data-view="shelf">
 
@@ -242,7 +242,7 @@ export default {
 /* 版本守卫：若浏览器缓存喂了旧版 app.js（APP_VER 与本页期望不符），
  * 自动注销 SW + 清空 Cache Storage + 强制带参重载一次，自愈旧缓存混跑。
  * sessionStorage 防死循环：自愈一次后若仍不符则停手（说明是别的问题）。 */
-window.__EXPECT_VER = '2026-07-28.5';
+window.__EXPECT_VER = '2026-07-28.6';
 window.addEventListener('load', function () {
   try {
     if (window.APP_VER === window.__EXPECT_VER) { sessionStorage.removeItem('ver-fix'); return; }
@@ -259,12 +259,12 @@ window.addEventListener('load', function () {
   } catch (e) {}
 });
 </script>
-<script src="js/db.js?v=2026-07-28.5"></script>
-<script src="js/services.js?v=2026-07-28.5"></script>
-<script src="js/interaction.js?v=2026-07-28.5"></script>
-<script src="js/readers/txt.js?v=2026-07-28.5"></script>
-<script src="js/readers/epub.js?v=2026-07-28.5"></script>
-<script src="js/readers/pdf.js?v=2026-07-28.5"></script>
-<script src="js/app.js?v=2026-07-28.5"></script>
+<script src="js/db.js?v=2026-07-28.6"></script>
+<script src="js/services.js?v=2026-07-28.6"></script>
+<script src="js/interaction.js?v=2026-07-28.6"></script>
+<script src="js/readers/txt.js?v=2026-07-28.6"></script>
+<script src="js/readers/epub.js?v=2026-07-28.6"></script>
+<script src="js/readers/pdf.js?v=2026-07-28.6"></script>
+<script src="js/app.js?v=2026-07-28.6"></script>
 </body>
 </html>

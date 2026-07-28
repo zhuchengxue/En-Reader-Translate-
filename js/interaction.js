@@ -41,9 +41,27 @@ const Interaction = (() => {
     }
   }
 
+  /* 判断视口坐标 (x,y) 是否落在 range 的实际包围盒内（容差 tol 像素）。
+   * 这是「点哪都翻译」的根因修复：caretRangeFromPoint 会把点击吸附到最近单词，
+   * 即使你点在一行末尾的空白 / 词间空格 / 页边距附近。只有真正落在单词盒子里的点击
+   * 才算取词，其余一律当作空白（翻页 / 关弹层）。 */
+  function pointInRange(x, y, range, tol) {
+    let rects = range.getClientRects();
+    if (!rects.length) {
+      const r = range.getBoundingClientRect();
+      if (r && (r.width || r.height)) rects = [r];
+    }
+    for (const r of rects) {
+      if (x >= r.left - tol && x <= r.right + tol && y >= r.top - tol && y <= r.bottom + tol) return true;
+    }
+    return false;
+  }
+
   /* 命中测试：在文档(doc)的视口坐标(x,y)处取出单词，返回 {word, node, offset, range, doc}
-   * offset 为单词在 node 文本中的起始位置，供句子计算使用。 */
-  function wordAtPoint(doc, x, y) {
+   * offset 为单词在 node 文本中的起始位置，供句子计算使用。
+   * precise=true 时要求点击点必须落在单词包围盒内（单击取词用，避免误触）；
+   * precise=false 时宽松（双击整句翻译用，确保点击略偏也能命中）。 */
+  function wordAtPoint(doc, x, y, precise) {
     let node = null, offset = 0;
     try {
       if (doc.caretRangeFromPoint) {
@@ -69,19 +87,26 @@ const Interaction = (() => {
     const range = doc.createRange();
     range.setStart(node, s);
     range.setEnd(node, e);
+    // 精确模式：点击点必须落在单词的实际包围盒内，否则视为空白
+    if (precise && !pointInRange(x, y, range, 3)) return null;
     return { word, node, offset: s, range, doc };
   }
 
   /* 兼容 PDF 文本层：优先用已包裹的整词（.w）；否则坐标命中（自然段落/整词）。
-   * PDF 文本被拆成非整词片段，必须由 .w 提供完整单词，故 .w 优先。 */
-  function resolveHit(doc, x, y, target) {
+   * PDF 文本被拆成非整词片段，必须由 .w 提供完整单词，故 .w 优先。
+   * precise=true 时要求点击落在单词盒子内，否则当作空白。 */
+  function resolveHit(doc, x, y, target, precise) {
     const span = target && target.closest ? target.closest('.w') : null;
     if (span && span.firstChild && span.firstChild.nodeType === 3) {
-      const range = doc.createRange();
-      range.selectNodeContents(span);
-      return { word: span.textContent, node: span.firstChild, offset: 0, range, doc };
+      const sr = span.getBoundingClientRect();
+      if (!precise || (x >= sr.left - 3 && x <= sr.right + 3 && y >= sr.top - 3 && y <= sr.bottom + 3)) {
+        const range = doc.createRange();
+        range.selectNodeContents(span);
+        return { word: span.textContent, node: span.firstChild, offset: 0, range, doc };
+      }
+      return null; // 命中 .w 区域外：不算取词
     }
-    const hit = wordAtPoint(doc, x, y);
+    const hit = wordAtPoint(doc, x, y, precise);
     if (hit && hit.word) return hit;
     return null;
   }
@@ -247,7 +272,7 @@ const Interaction = (() => {
         handlers.onBlank && handlers.onBlank(fx, e.target);
         return;
       }
-      const hit = resolveHit(doc, e.clientX, e.clientY, e.target);
+      const hit = resolveHit(doc, e.clientX, e.clientY, e.target, true);
 
       if (hit) {
         e.preventDefault();
@@ -276,7 +301,7 @@ const Interaction = (() => {
       const off = off0();
       const vx = e.clientX + off.x;
       const vy = e.clientY + off.y;
-      const hit = resolveHit(doc, e.clientX, e.clientY, e.target);
+      const hit = resolveHit(doc, e.clientX, e.clientY, e.target, false);
       if (!hit) return;
       e.preventDefault();
       if (clickTimer) { clearTimeout(clickTimer); clickTimer = null; }
@@ -315,7 +340,7 @@ const Interaction = (() => {
         handlers.onBlank && handlers.onBlank(fx, el);
         return;
       }
-      const hit = resolveHit(doc, ct.clientX, ct.clientY, el);
+      const hit = resolveHit(doc, ct.clientX, ct.clientY, el, true);
 
       if (hit) {
         e.preventDefault();           // 阻止原生选区与合成的 click
@@ -327,8 +352,10 @@ const Interaction = (() => {
             Math.abs(vx - lastTap.x) < 30 && Math.abs(vy - lastTap.y) < 30) {
           if (clickTimer) { clearTimeout(clickTimer); clickTimer = null; }
           lastTap = null;
-          const { sent, sentRect } = sentenceHit(hit, off);
-          handlers.onSentence && handlers.onSentence(sent, hit.word, hit, sentRect);
+          // 双击：宽松取词，确保第二次点略偏也能命中整句
+          const dblHit = resolveHit(doc, ct.clientX, ct.clientY, el, false) || hit;
+          const { sent, sentRect } = sentenceHit(dblHit, off);
+          handlers.onSentence && handlers.onSentence(sent, dblHit.word, dblHit, sentRect);
         } else {
           lastTap = { x: vx, y: vy, t: Date.now() };
           if (clickTimer) { clearTimeout(clickTimer); clickTimer = null; }
