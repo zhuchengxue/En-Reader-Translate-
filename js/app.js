@@ -1,6 +1,6 @@
 /* 主控逻辑：书架 / 导入 / 阅读 / 生词本 / 设置 / 统计 */
 (() => {
-  const APP_VER = '2026-07-28.8'; // 前端版本号：诊断面板可见 + index.html 版本守卫比对
+  const APP_VER = '2026-07-28.9'; // 前端版本号：诊断面板可见 + index.html 版本守卫比对
   window.APP_VER = APP_VER; // 暴露给 index.html 内联守卫脚本做版本一致性校验
   const $ = s => document.querySelector(s);
   const $$ = s => Array.from(document.querySelectorAll(s));
@@ -892,6 +892,22 @@
   }
 
   /* ---------- 事件绑定 ---------- */
+  /* ---- 全屏阅读 ---- */
+  function fsElement() { return document.fullscreenElement || document.webkitFullscreenElement; }
+  function toggleFullscreen() {
+    const de = document.documentElement;
+    if (!fsElement()) {
+      const req = de.requestFullscreen || de.webkitRequestFullscreen;
+      if (req) { try { req.call(de); } catch (e) {} }
+    } else {
+      const ex = document.exitFullscreen || document.webkitExitFullscreen;
+      if (ex) { try { ex.call(document); } catch (e) {} }
+    }
+  }
+  function syncFsBtn() {
+    const b = $('#btn-fs'); if (b) b.classList.toggle('is-fs', !!fsElement());
+  }
+
   function bindAll() {
     /* 书架 */
     on('#btn-import', 'click', () => $('#file-input').click());
@@ -967,6 +983,18 @@
       settings = Settings.set({ pageMode: m });
       updatePageModeBtn();
       reader && reader.setPageMode && reader.setPageMode(m);
+    });
+
+    /* 全屏：按钮 + 状态同步 + F 快捷键（阅读视图、非输入框） */
+    on('#btn-fs', 'click', toggleFullscreen);
+    document.addEventListener('fullscreenchange', syncFsBtn);
+    document.addEventListener('webkitfullscreenchange', syncFsBtn);
+    document.addEventListener('keydown', (e) => {
+      if (e.key !== 'f' && e.key !== 'F') return;
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      const t = e.target;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+      if (view() === 'reader') { e.preventDefault(); toggleFullscreen(); }
     });
 
     /* 设置面板 */
@@ -1138,6 +1166,8 @@
     }
     settings = Settings.get();
     document.body.dataset.theme = settings.theme;
+    /* 兑换码模块关闭时隐藏其全部 UI（入口/设置行/激活模态），便于调试与后续加功能 */
+    if (!window.License || !License.enabled()) document.body.classList.add('no-license');
     try { bindAll(); } catch (e) { console.error('bindAll error', e); }
     try {
       updateSwatches();

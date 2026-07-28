@@ -9,6 +9,10 @@
   /* 内嵌公钥（由 tools/keys.js 生成，对应 worker/keys.private.txt 的私钥）。可公开，无法反推私钥。 */
   const LICENSE_PUBLIC_KEY = { kty: 'OKP', crv: 'Ed25519', x: 'gSyJJAPzUbWzRAJwAnA8HOR089H2E0Xe4SPhghFxLI4' };
 
+  /* 兑换码模块总开关：false = 临时关闭（调试 / 开发期、准备加新功能时，让闸门放行、不拦打开书）；
+   * 上线收费时改回 true 即可完整恢复激活流程（UI 由 body.no-license 控制显隐）。 */
+  const LICENSE_ENABLED = false;
+
   const TRIAL_LIMIT = 3;          // 试用可打开书本次数
   const LS_TOKEN = 'enr_license_token';
   const LS_TRIAL = 'enr_trial_used';
@@ -41,8 +45,11 @@
   }
 
   const License = {
-    /* 闸门是否生效：自动化测试关闭，真实浏览器开启 */
-    gateEnabled() { return !navigator.webdriver; },
+    /* 模块是否启用（总开关） */
+    enabled() { return LICENSE_ENABLED; },
+
+    /* 闸门是否生效：模块开启且非自动化测试(真实浏览器)才拦截 */
+    gateEnabled() { return LICENSE_ENABLED && !navigator.webdriver; },
 
     async verify(token) {
       try {
@@ -61,6 +68,7 @@
     setToken(t) { localStorage.setItem(LS_TOKEN, t); },
 
     async isActivated() {
+      if (!LICENSE_ENABLED) return false;
       const t = this.getToken();
       if (!t) return false;
       return this.verify(t);
@@ -68,7 +76,7 @@
 
     /* 试用计数 */
     getTrialUsed() { return parseInt(localStorage.getItem(LS_TRIAL) || '0', 10) || 0; },
-    getTrialRemaining() { return Math.max(0, TRIAL_LIMIT - this.getTrialUsed()); },
+    getTrialRemaining() { if (!LICENSE_ENABLED) return 9999; return Math.max(0, TRIAL_LIMIT - this.getTrialUsed()); },
     useTrial() {
       const n = this.getTrialUsed() + 1;
       localStorage.setItem(LS_TRIAL, String(n));
