@@ -1,6 +1,6 @@
 /* 主控逻辑：书架 / 导入 / 阅读 / 生词本 / 设置 / 统计 */
 (() => {
-  const APP_VER = '2026-07-29.22'; // 前端版本号：诊断面板可见 + index.html 版本守卫比对
+  const APP_VER = '2026-07-29.23'; // 前端版本号：诊断面板可见 + index.html 版本守卫比对
   window.APP_VER = APP_VER; // 暴露给 index.html 内联守卫脚本做版本一致性校验
   const $ = s => document.querySelector(s);
   const $$ = s => Array.from(document.querySelectorAll(s));
@@ -1186,11 +1186,8 @@
   function bindAll() {
     /* 书架 */
     on('#btn-import', 'click', () => $('#file-input').click());
-    on('#btn-shelf-settings', 'click', () => {
-      // 书架页也能开设置（无需先打开一本书），方便配置同步口令等
-      if (view() === 'reader') closeBook();
-      openSettings();
-    });
+    // 书架顶部 Aa 按钮：打开设置面板（同步口令、主题等），不动阅读器状态
+    on('#btn-shelf-settings', 'click', openSettings);
     on('#btn-diag', 'click', runDiag);
     on('#diag-close', 'click', closeDiag);
     on('#diag-mask', 'click', closeDiag);
