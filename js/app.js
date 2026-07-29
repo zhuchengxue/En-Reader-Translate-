@@ -1,6 +1,6 @@
 /* 主控逻辑：书架 / 导入 / 阅读 / 生词本 / 设置 / 统计 */
 (() => {
-  const APP_VER = '2026-07-29.27'; // 前端版本号：诊断面板可见 + index.html 版本守卫比对
+  const APP_VER = '2026-07-29.28'; // 前端版本号：诊断面板可见 + index.html 版本守卫比对
   window.APP_VER = APP_VER; // 暴露给 index.html 内联守卫脚本做版本一致性校验
   const $ = s => document.querySelector(s);
   const $$ = s => Array.from(document.querySelectorAll(s));
@@ -211,9 +211,10 @@
     /* 增量渲染：翻译与词典释义并行获取，谁先回来先显示谁，互不阻塞 */
     const render = () => {
       if (!dictCurrent || dictCurrent.word !== word) return;
+      const lang = settings.dictLang || 'both';
       let html = '';
-      if (dictCurrent.zh && dictCurrent.zh !== word) html += '<div class="dict-zh">' + esc(dictCurrent.zh) + '</div>';
-      for (const m of dictCurrent.meanings) {
+      if (lang !== 'en' && dictCurrent.zh && dictCurrent.zh !== word) html += '<div class="dict-zh">' + esc(dictCurrent.zh) + '</div>';
+      if (lang !== 'zh') for (const m of dictCurrent.meanings) {
         html += '<div class="dict-pos">[' + esc(m.pos) + ']</div><div class="dict-def">' + esc(m.def) + '</div>';
       }
       if (!html) html = '<div class="dict-loading">未找到释义</div>';
@@ -1105,6 +1106,7 @@
 
   function updateSegs() {
     $$('#click-mode-seg button').forEach(b => b.classList.toggle('on', b.dataset.m === settings.clickMode));
+    $$('#dict-lang-seg button').forEach(b => b.classList.toggle('on', b.dataset.dl === (settings.dictLang || 'both')));
   }
 
   function updateFontLabel() { $('#font-size-label').textContent = settings.fontSize; }
@@ -1305,6 +1307,10 @@
     $$('#click-mode-seg button').forEach(b => b.addEventListener('click', () => {
       settings = Settings.set({ clickMode: b.dataset.m });
       updateSegs();
+    }));
+    $$('#dict-lang-seg button').forEach(b => b.addEventListener('click', () => {
+      settings = Settings.set({ dictLang: b.dataset.dl });
+      updateDictLang();
     }));
     $$('#lh-seg button').forEach(b => b.addEventListener('click', () => {
       settings = Settings.set({ lineHeight: Number(b.dataset.lh) });
