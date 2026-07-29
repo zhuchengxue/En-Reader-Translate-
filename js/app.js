@@ -1,6 +1,6 @@
 /* 主控逻辑：书架 / 导入 / 阅读 / 生词本 / 设置 / 统计 */
 (() => {
-  const APP_VER = '2026-07-29.23'; // 前端版本号：诊断面板可见 + index.html 版本守卫比对
+  const APP_VER = '2026-07-29.24'; // 前端版本号：诊断面板可见 + index.html 版本守卫比对
   window.APP_VER = APP_VER; // 暴露给 index.html 内联守卫脚本做版本一致性校验
   const $ = s => document.querySelector(s);
   const $$ = s => Array.from(document.querySelectorAll(s));
@@ -920,6 +920,7 @@
     $('#settings-panel').classList.add('open'); $('#settings-mask').classList.remove('hidden');
   }
   function closeSettings() { $('#settings-panel').classList.remove('open'); $('#settings-mask').classList.add('hidden'); }
+  window._openSettings = openSettings; // 暴露给内联 onclick 使用
   function closeProxyHelp() { $('#proxy-help-panel').classList.remove('open'); $('#proxy-help-mask').classList.add('hidden'); }
 
   /* 同步口令 UI */
@@ -1186,8 +1187,7 @@
   function bindAll() {
     /* 书架 */
     on('#btn-import', 'click', () => $('#file-input').click());
-    // 书架顶部 Aa 按钮：打开设置面板（同步口令、主题等），不动阅读器状态
-    on('#btn-shelf-settings', 'click', openSettings);
+    /* 同步/设置按钮由内联 onclick 处理，不在此绑定 */
     on('#btn-diag', 'click', runDiag);
     on('#diag-close', 'click', closeDiag);
     on('#diag-mask', 'click', closeDiag);
