@@ -1,6 +1,6 @@
 /* 主控逻辑：书架 / 导入 / 阅读 / 生词本 / 设置 / 统计 */
 (() => {
-  const APP_VER = '2026-07-29.34'; // 前端版本号：诊断面板可见 + index.html 版本守卫比对
+  const APP_VER = '2026-07-29.35'; // 前端版本号：诊断面板可见 + index.html 版本守卫比对
   window.APP_VER = APP_VER; // 暴露给 index.html 内联守卫脚本做版本一致性校验
   const $ = s => document.querySelector(s);
   const $$ = s => Array.from(document.querySelectorAll(s));
@@ -1041,6 +1041,7 @@
   }
   window._toggleSync = _toggleSyncPanel;
   window._saveSyncToken = _saveSyncToken;
+  if (typeof window !== 'undefined') window.__highlightAllTextNodes = highlightAllTextNodes; // 测试用
   function closeProxyHelp() { $('#proxy-help-panel').classList.remove('open'); $('#proxy-help-mask').classList.add('hidden'); }
 
   /* ---------- 兑换码激活 / 试用限次 ---------- */
