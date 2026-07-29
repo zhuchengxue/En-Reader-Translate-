@@ -266,12 +266,8 @@ const Interaction = (() => {
       const off = off0();
       const vx = e.clientX + off.x;
       const vy = e.clientY + off.y;
-      if (isBlankArea(e.target)) {
-        clearSel(doc);
-        const fx = vx / window.innerWidth;
-        handlers.onBlank && handlers.onBlank(fx, e.target);
-        return;
-      }
+      /* 先尝试取词（caretRangeFromPoint），再判断是否空白。iOS Safari 上
+       * elementFromPoint 可能返回容器而非段落，导致 isBlankArea 假阳性。 */
       const hit = resolveHit(doc, e.clientX, e.clientY, e.target, true);
 
       if (hit) {
@@ -288,7 +284,8 @@ const Interaction = (() => {
         return;
       }
 
-      /* 空白区域：按横向位置分区（翻页/呼出工具栏） */
+      /* 无单词命中 → 空白区域：按横向位置分区（翻页/呼出工具栏） */
+      if (!isBlankArea(e.target)) return; // 非阅读容器也不拦截（如链接、图片等）
       clearSel(doc);
       const fx = vx / window.innerWidth;
       handlers.onBlank && handlers.onBlank(fx, e.target);
@@ -345,14 +342,9 @@ const Interaction = (() => {
       const vy = ct.clientY + off.y;
       const el = doc.elementFromPoint(ct.clientX, ct.clientY);
       if (inChrome(el)) return; // UI 控件内不取词，交还控件自身
-      if (isBlankArea(el)) {
-        e.preventDefault();
-        touchSuppressUntil = Date.now() + 1200;
-        clearSel(doc);
-        const fx = vx / window.innerWidth;
-        handlers.onBlank && handlers.onBlank(fx, el);
-        return;
-      }
+
+      /* 先尝试取词（caretRangeFromPoint），再判断是否空白。
+       * iOS Safari 上 elementFromPoint 可能返回容器而非段落，导致 isBlankArea 假阳性。 */
       const hit = resolveHit(doc, ct.clientX, ct.clientY, el, true);
 
       if (hit) {
@@ -380,7 +372,8 @@ const Interaction = (() => {
         return;
       }
 
-      // 空白处：翻页/呼出工具栏
+      /* 无单词命中 → 空白区域（翻页/呼出工具栏） */
+      if (!isBlankArea(el)) return; // 非阅读容器不拦截（如链接、图片等）
       e.preventDefault();
       touchSuppressUntil = Date.now() + 1200;
       clearSel(doc);

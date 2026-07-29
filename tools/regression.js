@@ -282,11 +282,20 @@ async function clearSentPopup(page) {
   const stopped = await page.evaluate(() => document.querySelector('#btn-read').textContent);
   check('连续朗读可停止', /朗读/.test(stopped), 'txt=' + stopped);
 
-  // 翻页效果设置 + 全屏退出浮钮
+  // 翻页效果设置 + 全屏退出浮钮 + 设置关闭按钮
   const paSeg = await page.evaluate(() => !!document.querySelector('#pageanim-seg'));
   check('翻页效果设置存在', paSeg);
   const fsFab = await page.evaluate(() => !!document.querySelector('#fs-exit-fab'));
   check('全屏退出浮钮存在', fsFab);
+  // 验证设置面板关闭 X 存在且可点击关闭
+  const settingsClose = await page.evaluate(() => !!document.querySelector('#settings-close'));
+  check('设置面板关闭X存在', settingsClose);
+  await page.evaluate(() => { document.querySelector('#btn-settings').click(); });
+  await page.waitForTimeout(400);
+  await page.evaluate(() => { const b = document.querySelector('#settings-close'); if (b) b.click(); });
+  await page.waitForTimeout(400);
+  const settingsClosedAfterX = await page.evaluate(() => !document.querySelector('#settings-panel').classList.contains('open'));
+  check('设置面板X可关闭', settingsClosedAfterX);
   await page.evaluate(() => { const b = [...document.querySelectorAll('#pageanim-seg button')].find(x => x.dataset.pa === 'fade'); b && b.click(); });
   const paStored = await page.evaluate(() => (JSON.parse(localStorage.getItem('en-reader-settings') || '{}')).pageAnim);
   check('翻页效果可切换(fade)', paStored === 'fade', 'stored=' + paStored);

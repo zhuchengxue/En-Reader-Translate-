@@ -1,6 +1,6 @@
 /* 主控逻辑：书架 / 导入 / 阅读 / 生词本 / 设置 / 统计 */
 (() => {
-  const APP_VER = '2026-07-28.15'; // 前端版本号：诊断面板可见 + index.html 版本守卫比对
+  const APP_VER = '2026-07-28.16'; // 前端版本号：诊断面板可见 + index.html 版本守卫比对
   window.APP_VER = APP_VER; // 暴露给 index.html 内联守卫脚本做版本一致性校验
   const $ = s => document.querySelector(s);
   const $$ = s => Array.from(document.querySelectorAll(s));
@@ -1237,6 +1237,7 @@
       $('#settings-panel').classList.contains('open') ? closeSettings() : openSettings();
     });
     on('#settings-mask', 'click', closeSettings);
+    on('#settings-close', 'click', closeSettings);
     on('#btn-pagemode', 'click', () => {
       const m = settings.pageMode === 'single' ? 'double' : 'single';
       settings = Settings.set({ pageMode: m });
