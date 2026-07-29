@@ -7,7 +7,7 @@
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%233b82f6'/%3E%3Cpath d='M50 30c-6-4-15-5-22-2v44c7-3 16-2 22 2 6-4 15-5 22-2V28c-7-3-16-2-22 2z' fill='white'/%3E%3Cpath d='M50 30v44' stroke='%233b82f6' stroke-width='4'/%3E%3C/svg%3E">
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#3b82f6">
-<link rel="stylesheet" href="css/style.css?v=2026-07-29.24">
+<link rel="stylesheet" href="css/style.css?v=2026-07-29.25">
 </head>
 <body data-theme="light" data-view="shelf">
 
@@ -27,10 +27,7 @@
         <svg class="btn-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 6c-1.6-1.4-4.4-1.9-8-1.4V18c3.6-.5 6.4 0 8 1.4 1.6-1.4 4.4-1.9 8-1.4V4.6c-3.6-.5-6.4 0-8 1.4z"/><path d="M12 6v13"/></svg>
         <span>书城</span>
       </button>
-      <button id="btn-shelf-settings" class="btn-ghost" title="同步 / 设置" onclick="window._openSettings&&window._openSettings()">
-        <svg class="btn-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/></svg>
-        <span>同步</span>
-      </button>
+      <button id="btn-shelf-settings" class="btn-ghost" onclick="window._openSettings&&window._openSettings()">同步</button>
       <button id="btn-import" class="btn-primary">＋ 导入图书</button>
     </div>
   </header>
@@ -334,7 +331,7 @@ export default {
 /* 版本守卫：若浏览器缓存喂了旧版 app.js（APP_VER 与本页期望不符），
  * 自动注销 SW + 清空 Cache Storage + 强制带参重载一次，自愈旧缓存混跑。
  * sessionStorage 防死循环：自愈一次后若仍不符则停手（说明是别的问题）。 */
-window.__EXPECT_VER = '2026-07-29.24';
+window.__EXPECT_VER = '2026-07-29.25';
 window.addEventListener('load', function () {
   try {
     if (window.APP_VER === window.__EXPECT_VER) { sessionStorage.removeItem('ver-fix'); return; }
@@ -351,15 +348,15 @@ window.addEventListener('load', function () {
   } catch (e) {}
 });
 </script>
-<script src="js/db.js?v=2026-07-29.24"></script>
-<script src="js/services.js?v=2026-07-29.24"></script>
-<script src="js/interaction.js?v=2026-07-29.24"></script>
-<script src="js/readers/txt.js?v=2026-07-29.24"></script>
-<script src="js/readers/epub.js?v=2026-07-29.24"></script>
-<script src="js/readers/pdf.js?v=2026-07-29.24"></script>
-<script src="js/license.js?v=2026-07-29.24"></script>
-<script src="js/gutenberg.js?v=2026-07-29.24"></script>
-<script src="js/sync.js?v=2026-07-29.24"></script>
-<script src="js/app.js?v=2026-07-29.24"></script>
+<script src="js/db.js?v=2026-07-29.25"></script>
+<script src="js/services.js?v=2026-07-29.25"></script>
+<script src="js/interaction.js?v=2026-07-29.25"></script>
+<script src="js/readers/txt.js?v=2026-07-29.25"></script>
+<script src="js/readers/epub.js?v=2026-07-29.25"></script>
+<script src="js/readers/pdf.js?v=2026-07-29.25"></script>
+<script src="js/license.js?v=2026-07-29.25"></script>
+<script src="js/gutenberg.js?v=2026-07-29.25"></script>
+<script src="js/sync.js?v=2026-07-29.25"></script>
+<script src="js/app.js?v=2026-07-29.25"></script>
 </body>
 </html>
