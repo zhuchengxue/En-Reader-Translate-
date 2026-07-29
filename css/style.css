@@ -66,20 +66,23 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
   gap: 28px 24px; align-content: start;
 }
 
-/* 书架页内联同步口令面板 */
+/* 同步按钮容器 + 下拉小弹窗 */
+.shelf-sync-wrap { position: relative; display: inline-block; }
 .shelf-sync-panel {
-  display: flex; align-items: center; gap: 10px;
-  padding: 14px 40px; background: var(--bg2);
-  border-bottom: 1px solid var(--border);
-  transition: opacity .18s, transform .18s;
+  position: absolute; top: calc(100% + 6px); right: 0; z-index: 30;
+  background: var(--bg2); border: 1px solid var(--border); border-radius: 10px;
+  padding: 10px; box-shadow: 0 6px 20px rgba(0,0,0,.18);
+  width: 240px; display: flex; flex-direction: column; gap: 8px;
 }
 .shelf-sync-panel.hidden { display: none; }
 .shelf-sync-input {
-  flex: 1; min-width: 0; max-width: 480px; height: 40px; padding: 0 14px;
-  border: 1px solid var(--border); border-radius: 10px;
+  height: 36px; padding: 0 12px;
+  border: 1px solid var(--border); border-radius: 8px;
   background: var(--bg3); color: var(--text); font-size: 14px; outline: none;
 }
-.shelf-sync-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--hl); }
+.shelf-sync-input:focus { border-color: var(--accent); }
+.shelf-sync-actions { display: flex; gap: 6px; justify-content: flex-end; }
+.shelf-sync-actions .tool-btn { padding: 6px 14px; font-size: 13px; }
 .tool-btn-accent { background: var(--accent); color: #fff; border-color: var(--accent); }
 .tool-btn-accent:hover { color: #fff; filter: brightness(1.08); }
 .book-card { position: relative; cursor: pointer; content-visibility: auto; contain-intrinsic-size: auto 260px; }
