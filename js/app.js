@@ -1,6 +1,6 @@
 /* 主控逻辑：书架 / 导入 / 阅读 / 生词本 / 设置 / 统计 */
 (() => {
-  const APP_VER = '2026-07-29.37'; // 前端版本号：诊断面板可见 + index.html 版本守卫比对
+  const APP_VER = '2026-07-29.38'; // 前端版本号：诊断面板可见 + index.html 版本守卫比对
   window.APP_VER = APP_VER; // 暴露给 index.html 内联守卫脚本做版本一致性校验
   const $ = s => document.querySelector(s);
   const $$ = s => Array.from(document.querySelectorAll(s));
@@ -287,6 +287,13 @@
 
     /* 查新词前清理旧的 .w-seen 高亮（确保每次只显示当前词的标黄） */
     $$('.w-seen').forEach(s => { try { replaceSpanWithText(s); } catch (e) {} });
+
+    /* 「整本高亮」开关开启时：每次点词都标黄 */
+    if (settings.persistLookup && doc) {
+      const list = highlightAllTextNodes(doc, word);
+      dictCurrent.seenSpans = list;
+      dictCurrent.seenWord = word;
+    }
 
     /* 增量渲染：翻译与词典释义并行获取，谁先回来先显示谁，互不阻塞 */
     const render = () => {
@@ -1193,6 +1200,7 @@
   function updateSegs() {
     $$('#click-mode-seg button').forEach(b => b.classList.toggle('on', b.dataset.m === settings.clickMode));
     $$('#dict-lang-seg button').forEach(b => b.classList.toggle('on', b.dataset.dl === (settings.dictLang || 'both')));
+    $$('#persist-lookup-seg button').forEach(b => b.classList.toggle('on', (b.dataset.pl === '1') === !!settings.persistLookup));
     $$('#auto-resume-seg button').forEach(b => b.classList.toggle('on', (b.dataset.ar === '1') === !!settings.autoResumeBook));
   }
 
@@ -1366,7 +1374,14 @@
       reader && reader.setPageMode && reader.setPageMode(m);
     });
 
-    /* 启动行为 seg */
+    /* 查词高亮 / 启动行为 seg（设置面板） */
+    $$('#persist-lookup-seg button').forEach(b => b.addEventListener('click', () => {
+      settings = Settings.set({ persistLookup: b.dataset.pl === '1' });
+      updateSegs();
+      if (!settings.persistLookup) {
+        $$('.w-seen').forEach(s => { try { replaceSpanWithText(s); } catch (e) {} });
+      }
+    }));
     $$('#auto-resume-seg button').forEach(b => b.addEventListener('click', () => {
       settings = Settings.set({ autoResumeBook: b.dataset.ar === '1' });
       updateSegs();
@@ -1513,7 +1528,6 @@
     });
     on('#dict-add', 'click', async () => {
       if (!dictCurrent) return;
-      // 保存引用（hideDict 会清空 dictCurrent）
       const w = dictCurrent.word;
       const d = dictCurrent.doc;
       await DB.put('vocab', {
@@ -1525,14 +1539,16 @@
         addedAt: Date.now()
       });
       updateVocabCount();
-      toast('已添加');
       hideDict();
       SyncService.schedulePush();
       /* 加入生词本后，整篇标黄该词 */
       if (d) {
         $$('.w-seen').forEach(s => { try { replaceSpanWithText(s); } catch (e) {} });
-        const count = highlightAllTextNodes(d, w).length;
-        if (count > 1) toast('已标黄全文 ' + count + ' 处');
+        const spans = highlightAllTextNodes(d, w);
+        if (spans.length > 0) toast('已标黄 ' + spans.length + ' 处');
+        else toast('已添加（全文无其他匹配）');
+      } else {
+        toast('已添加（无文档上下文）');
       }
     });
 
