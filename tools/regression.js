@@ -230,27 +230,6 @@ async function clearSentPopup(page) {
   check('句子弹层不跳动(位置稳定)', sentPos1.top === sentPos2.top && sentPos1.left === sentPos2.left, JSON.stringify({ sentPos1, sentPos2 }));
   const anchor = await page.evaluate(() => { const p = document.querySelector('#sent-popup').getBoundingClientRect(); return { top: Math.round(p.top), bottom: Math.round(p.bottom), vh: window.innerHeight }; });
   check('句子弹层锚定单词附近(非底部)', anchor.top > 0 && anchor.bottom < anchor.vh - 5, JSON.stringify(anchor));
-
-  // 整本高亮:在 reader 内制造可点击单词触发 highlightAllTextNodes
-  await page.evaluate(() => { const s = JSON.parse(localStorage.getItem('en-reader-settings')||'{}'); s.persistLookup = true; localStorage.setItem('en-reader-settings', JSON.stringify(s)); });
-  await page.reload(); await page.waitForTimeout(2500); await waitLoading();
-  await openByTitle('Gatsby'); await page.waitForTimeout(2500); await waitLoading();
-  await page.waitForSelector('#reader-container .txt-content', { timeout: 10000 }).catch(() => {});
-  const hlRes = await page.evaluate(() => {
-    const p = document.querySelector('#reader-container .txt-content p');
-    if (!p) return { ok: false, reason: 'no p' };
-    const tn = p.firstChild; const text = tn.nodeValue;
-    const m = text.match(/the/i);
-    if (!m) return { ok: false, reason: 'no "the"' };
-    const r = document.createRange(); r.setStart(tn, m.index); r.setEnd(tn, m.index + 3);
-    const span = document.createElement('span');
-    span.className = 'w-active w-stay';
-    try { r.surroundContents(span); } catch (e) { return { ok: false, reason: 'surround fail: ' + e.message }; }
-    if (typeof window.__highlightAllTextNodes !== 'function') return { ok: false, reason: 'no hl fn' };
-    const list = window.__highlightAllTextNodes(document, 'the');
-    return { ok: true, count: list.length, wseen: document.querySelectorAll('.w-seen').length };
-  });
-  check('highlightAllTextNodes 产生 .w-seen', hlRes.ok && hlRes.count > 0 && hlRes.wseen > 0, JSON.stringify(hlRes));
   const ov = await page.evaluate(() => {
     const p = document.querySelector('#sent-popup').getBoundingClientRect();
     const sel = window.getSelection();

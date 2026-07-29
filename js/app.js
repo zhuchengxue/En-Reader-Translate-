@@ -1,6 +1,6 @@
 /* 主控逻辑：书架 / 导入 / 阅读 / 生词本 / 设置 / 统计 */
 (() => {
-  const APP_VER = '2026-07-29.43'; // 前端版本号：诊断面板可见 + index.html 版本守卫比对
+  const APP_VER = '2026-07-29.44'; // 前端版本号：诊断面板可见 + index.html 版本守卫比对
   window.APP_VER = APP_VER; // 暴露给 index.html 内联守卫脚本做版本一致性校验
   const $ = s => document.querySelector(s);
   const $$ = s => Array.from(document.querySelectorAll(s));
@@ -203,65 +203,20 @@
   }
 
   /* ---------- 词典卡片 ---------- */
-  /* 把 span.w-seen / w-stay 还原成纯文本；批量清理 */
-  function replaceSpanWithText(span) {
-    if (!span || !span.parentNode) return;
-    const parent = span.parentNode;
-    while (span.firstChild) parent.insertBefore(span.firstChild, span);
-    parent.removeChild(span);
-    if (parent.normalize) parent.normalize();
-  }
-
-  /* 在 doc 中找出所有匹配 word 的文本节点，包上 span.w-seen 高亮。
-   极简方案：TreeWalker 找文本节点 → 直接改父级 innerHTML 替换。 */
-  function highlightAllTextNodes(doc, word) {
-    const spans = [];
-    if (!doc || !doc.body) { console.warn('[hl] no doc/body'); return spans; }
-    const re = new RegExp('\\b(' + escRe(word) + ')\\b', 'gi');
-    console.log('[hl] word=' + JSON.stringify(word) + ' re=' + re + ' bodyHTML.len=' + doc.body.innerHTML.length);
-    const walk = doc.createTreeWalker(
-      doc.body,
-      NodeFilter.SHOW_TEXT,
-      { acceptNode: n => {
-        const v = n.nodeValue, p = n.parentNode;
-        if (!v) return NodeFilter.FILTER_REJECT;
-        if (p && (p.tagName === 'SCRIPT' || p.tagName === 'STYLE')) return NodeFilter.FILTER_REJECT;
-        if (re.test(v)) { re.lastIndex = 0; return NodeFilter.FILTER_ACCEPT; }
-        re.lastIndex = 0; return NodeFilter.FILTER_REJECT;
-      }}
-    );
-    const textNodes = [];
-    let tn;
-    while ((tn = walk.nextNode())) textNodes.push(tn);
-    console.log('[hl] matched textNodes=' + textNodes.length);
-    const seenParents = new Set();
-    for (const node of textNodes) {
-      const parent = node.parentNode;
-      if (!parent || seenParents.has(parent)) continue;
-      if (parent.querySelector && parent.querySelector('.w-seen')) { seenParents.add(parent); continue; }
-      seenParents.add(parent);
-      const html = parent.innerHTML;
-      if (!re.test(html)) { re.lastIndex = 0; continue; }
-      re.lastIndex = 0;
-      parent.innerHTML = html.replace(re, '<span class="w-seen">$1</span>');
-      parent.querySelectorAll('.w-seen').forEach(s => spans.push(s));
-    }
-    console.log('[hl] wrapped spans=' + spans.length);
-    return spans;
-  }
-  /* 正则元字符转义 */
-  function escRe(s) { return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
-  /* HTML 实体转义 */
-  function escHtml(s) { return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 
   async function showDict(word, x, y, range, doc, flashSpan) {
     const popup = $('#dict-popup');
 
-    /* 清理上一次查词留下的高亮 */
+    /* 清理上一次查词留下的高亮 span */
     if (dictCurrent && dictCurrent.span) {
-      try { replaceSpanWithText(dictCurrent.span); } catch (e) {}
+      try {
+        const s = dictCurrent.span;
+        if (s && s.parentNode) {
+          while (s.firstChild) s.parentNode.insertBefore(s.firstChild, s);
+          s.parentNode.removeChild(s);
+        }
+      } catch (e) {}
     }
-    $$('.w-seen').forEach(s => { try { replaceSpanWithText(s); } catch (e) {} });
 
     dictCurrent = { word, audio: '', zh: '', phonetic: '', en: '', meanings: [], doc };
     $('#dict-word').textContent = word;
@@ -284,9 +239,6 @@
         dictCurrent.span = span;
       } catch (e) {}
     }
-
-    /* 查新词前清理旧的 .w-seen 高亮（确保每次只显示当前词的标黄） */
-    $$('.w-seen').forEach(s => { try { replaceSpanWithText(s); } catch (e) {} });
 
     /* 增量渲染：翻译与词典释义并行获取，谁先回来先显示谁，互不阻塞 */
     const render = () => {
@@ -389,11 +341,15 @@
 
   function hideDict() {
     $('#dict-popup').classList.add('hidden');
-    /* 移除被点击单词的 w-stay span（蓝色高亮） */
     if (dictCurrent && dictCurrent.span) {
-      try { replaceSpanWithText(dictCurrent.span); } catch (e) {}
+      try {
+        const s = dictCurrent.span;
+        if (s && s.parentNode) {
+          while (s.firstChild) s.parentNode.insertBefore(s.firstChild, s);
+          s.parentNode.removeChild(s);
+        }
+      } catch (e) {}
     }
-    /* 保留 .w-seen 标黄（用户加入生词本或开了整本高亮时）—— 下次点新词时由 showDict 清理 */
     dictCurrent = null;
     lastDictPos = null;
   }
@@ -1033,7 +989,6 @@
   }
   window._toggleSync = _toggleSyncPanel;
   window._saveSyncToken = _saveSyncToken;
-  if (typeof window !== 'undefined') window.__highlightAllTextNodes = highlightAllTextNodes; // 测试用
   function closeProxyHelp() { $('#proxy-help-panel').classList.remove('open'); $('#proxy-help-mask').classList.add('hidden'); }
 
   /* ---------- 兑换码激活 / 试用限次 ---------- */
@@ -1193,7 +1148,6 @@
   function updateSegs() {
     $$('#click-mode-seg button').forEach(b => b.classList.toggle('on', b.dataset.m === settings.clickMode));
     $$('#dict-lang-seg button').forEach(b => b.classList.toggle('on', b.dataset.dl === (settings.dictLang || 'both')));
-    $$('#persist-lookup-seg button').forEach(b => b.classList.toggle('on', (b.dataset.pl === '1') === !!settings.persistLookup));
     $$('#auto-resume-seg button').forEach(b => b.classList.toggle('on', (b.dataset.ar === '1') === !!settings.autoResumeBook));
   }
 
@@ -1367,14 +1321,7 @@
       reader && reader.setPageMode && reader.setPageMode(m);
     });
 
-    /* 查词高亮 / 启动行为 seg（设置面板） */
-    $$('#persist-lookup-seg button').forEach(b => b.addEventListener('click', () => {
-      settings = Settings.set({ persistLookup: b.dataset.pl === '1' });
-      updateSegs();
-      if (!settings.persistLookup) {
-        $$('.w-seen').forEach(s => { try { replaceSpanWithText(s); } catch (e) {} });
-      }
-    }));
+    /* 启动行为 seg */
     $$('#auto-resume-seg button').forEach(b => b.addEventListener('click', () => {
       settings = Settings.set({ autoResumeBook: b.dataset.ar === '1' });
       updateSegs();
@@ -1522,7 +1469,6 @@
     on('#dict-add', 'click', async () => {
       if (!dictCurrent) return;
       const w = dictCurrent.word;
-      const d = dictCurrent.doc;
       await DB.put('vocab', {
         word: w,
         phonetic: dictCurrent.phonetic || '',
@@ -1532,23 +1478,9 @@
         addedAt: Date.now()
       });
       updateVocabCount();
+      toast('已添加');
       hideDict();
       SyncService.schedulePush();
-      /* 整本高亮开关 ON 时，加入生词本的同时标黄该词在全文中所有出现。
-   兜底：如果开关没开但确实有该词的文本节点，强制尝试一次（避免「找不到设置」死循环） */
-      const shouldHl = settings.persistLookup;
-      if (d && (shouldHl || true)) {
-        try {
-          $$('.w-seen').forEach(s => { try { replaceSpanWithText(s); } catch (e) {} });
-          toast('搜索中…');
-          const spans = highlightAllTextNodes(d, w);
-          if (spans.length > 0) toast('已标黄 ' + spans.length + ' 处');
-          else toast('已添加（全文无其他匹配）');
-        } catch (e) {
-          console.error('[highlight]', e);
-          toast('已添加（标黄失败：' + (e.message || e) + '）');
-        }
-      }
     });
 
     /* 句子弹层 */

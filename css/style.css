@@ -253,11 +253,6 @@ body[data-theme="sepia"] .pdf-page canvas { filter: sepia(0.35) brightness(0.98)
 .w { cursor: pointer; -webkit-touch-callout: none; }
 .w:hover { background: var(--hl); border-radius: 2px; }
 .w.w-active { background: var(--hl); border-radius: 2px; }
-/* 整本高亮查过的词 */
-.w-stay { background: var(--hl); border-radius: 2px; }
-.w-seen { background: rgba(255, 213, 79, .35); border-radius: 2px; padding: 0 1px; }
-/* 「整本高亮」开关按钮激活态 */
-.icon-btn.on { color: var(--accent); background: var(--bg2); border-color: var(--accent); }
 
 /* ===== 目录抽屉 ===== */
 .toc-drawer {
