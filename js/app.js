@@ -1,6 +1,6 @@
 /* 主控逻辑：书架 / 导入 / 阅读 / 生词本 / 设置 / 统计 */
 (() => {
-  const APP_VER = '2026-07-29.25'; // 前端版本号：诊断面板可见 + index.html 版本守卫比对
+  const APP_VER = '2026-07-29.26'; // 前端版本号：诊断面板可见 + index.html 版本守卫比对
   window.APP_VER = APP_VER; // 暴露给 index.html 内联守卫脚本做版本一致性校验
   const $ = s => document.querySelector(s);
   const $$ = s => Array.from(document.querySelectorAll(s));
@@ -920,7 +920,17 @@
     $('#settings-panel').classList.add('open'); $('#settings-mask').classList.remove('hidden');
   }
   function closeSettings() { $('#settings-panel').classList.remove('open'); $('#settings-mask').classList.add('hidden'); }
-  window._openSettings = openSettings; // 暴露给内联 onclick 使用
+  /* 书架顶「同步」按钮：已配 token → 立即触发同步；未配 → 打开设置 */
+  async function quickSync() {
+    SyncService.init();
+    if (!SyncService.getToken()) { openSettings(); return; }
+    toast('同步中…');
+    const n = await SyncService.syncOnce();
+    if (n > 0) { renderShelf(); toast('同步完成，合并了 ' + n + ' 项'); }
+    else toast('已是最新数据');
+  }
+  window._openSettings = openSettings;
+  window._quickSync = quickSync;
   function closeProxyHelp() { $('#proxy-help-panel').classList.remove('open'); $('#proxy-help-mask').classList.add('hidden'); }
 
   /* 同步口令 UI */
