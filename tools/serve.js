@@ -87,19 +87,22 @@ async function handleSync(req, res) {
   const cors = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'GET, PUT, OPTIONS', 'Content-Type': 'application/json' };
   if (req.method === 'OPTIONS') { res.writeHead(204, cors); res.end(); return; }
   const url = new URL(req.url, 'http://localhost');
-  const token = (url.searchParams.get('token') || '').trim().slice(0, 64);
-  if (!token) { res.writeHead(400, cors); res.end(JSON.stringify({ error: 'Missing token' })); return; }
+  let token = (url.searchParams.get('token') || '').trim().slice(0, 64);
   let store = {};
   try { store = JSON.parse(fs.readFileSync(SYNC_FILE, 'utf8')); } catch (e) {}
-  const key = 'sync:' + token;
   if (req.method === 'GET') {
+    if (!token) { res.writeHead(400, cors); res.end(JSON.stringify({ error: 'Missing token' })); return; }
+    const key = 'sync:' + token;
     res.writeHead(200, cors);
     res.end(JSON.stringify({ data: store[key] || { books: [], vocab: [] }, ts: Date.now() }));
     return;
   }
   if (req.method === 'PUT') {
     const body = JSON.parse(await readBody(req));
+    if (body && body.token) token = body.token.toString().trim().slice(0, 64);
+    if (!token) { res.writeHead(400, cors); res.end(JSON.stringify({ error: 'Missing token' })); return; }
     if (!body || !body.data) { res.writeHead(400, cors); res.end(JSON.stringify({ error: 'Missing data' })); return; }
+    const key = 'sync:' + token;
     store[key] = body.data;
     fs.mkdirSync(path.dirname(SYNC_FILE), { recursive: true });
     fs.writeFileSync(SYNC_FILE, JSON.stringify(store, null, 2), 'utf8');
