@@ -1,6 +1,6 @@
 /* 主控逻辑：书架 / 导入 / 阅读 / 生词本 / 设置 / 统计 */
 (() => {
-  const APP_VER = '2026-07-29.30'; // 前端版本号：诊断面板可见 + index.html 版本守卫比对
+  const APP_VER = '2026-07-29.31'; // 前端版本号：诊断面板可见 + index.html 版本守卫比对
   window.APP_VER = APP_VER; // 暴露给 index.html 内联守卫脚本做版本一致性校验
   const $ = s => document.querySelector(s);
   const $$ = s => Array.from(document.querySelectorAll(s));
@@ -143,7 +143,7 @@
       Interaction.flashWord(info.range, info.doc);
       const mode = settings.clickMode;
       if (mode === 'sound') { TTS.speak(word); return; }
-      showDict(word, x, y);
+      showDict(word, x, y, info.range, info.doc);
       if (mode === 'both') TTS.speak(word);
     },
     onWordStart(word, x, y, info) {
@@ -198,7 +198,7 @@
   }
 
   /* ---------- 词典卡片 ---------- */
-  async function showDict(word, x, y) {
+  async function showDict(word, x, y, range, doc) {
     const popup = $('#dict-popup');
     dictCurrent = { word, audio: '', zh: '', phonetic: '', en: '', meanings: [] };
     $('#dict-word').textContent = word;
@@ -207,6 +207,19 @@
     popup.classList.remove('hidden');
     lastDictPos = { x, y };
     placeNear(popup, x, y);   // 仅在显示的一刻定位一次，之后内容增量加载不再重排
+
+    /* 持久高亮选中的单词（弹窗打开期间一直高亮，关闭时由 hideDict 移除） */
+    if (range && doc) {
+      try {
+        // 若之前 flashWord 留下的 span 还在，复用它延长停留时间；否则新包一个
+        const span = doc.createElement('span');
+        span.className = 'w-active w-stay';
+        const frag = range.extractContents();
+        span.appendChild(frag);
+        range.insertNode(span);
+        dictCurrent.span = span;
+      } catch (e) {}
+    }
 
     /* 增量渲染：翻译与词典释义并行获取，谁先回来先显示谁，互不阻塞 */
     const render = () => {
@@ -246,7 +259,7 @@
   function placeNear(popup, x, y) {
     const topThreshold = 56, bottomThreshold = 64;
     const vw = window.innerWidth, vh = window.innerHeight;
-    const w = popup.offsetWidth || (popup.classList.contains('dict-popup') ? 320 : 480);
+    const w = popup.offsetWidth || (popup.classList.contains('dict-popup') ? 240 : 480);
     const spaceAbove = y - topThreshold;
     const spaceBelow = vh - bottomThreshold - y;
     const placeAbove = spaceAbove >= spaceBelow;
@@ -309,6 +322,17 @@
 
   function hideDict() {
     $('#dict-popup').classList.add('hidden');
+    /* 移除持久高亮 span：还原为纯文本节点 */
+    if (dictCurrent && dictCurrent.span) {
+      try {
+        const span = dictCurrent.span;
+        const parent = span.parentNode;
+        if (parent) {
+          parent.replaceChild(document.createTextNode(span.textContent), span);
+          if (parent.normalize) parent.normalize();
+        }
+      } catch (e) {}
+    }
     dictCurrent = null;
     lastDictPos = null;
   }

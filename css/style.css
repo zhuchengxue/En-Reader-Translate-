@@ -363,7 +363,7 @@ body.fs-active .fs-exit-fab { display: flex; }
 
 /* ===== 词典卡片 ===== */
 .dict-popup {
-  position: fixed; z-index: 80; width: 320px;
+  position: fixed; z-index: 80; width: 240px;
   background: var(--bg3); border: 1px solid var(--border); border-radius: 14px;
   box-shadow: 0 8px 32px var(--shadow); padding: 16px 18px;
 }
