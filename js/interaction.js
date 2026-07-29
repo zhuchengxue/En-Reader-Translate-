@@ -64,17 +64,18 @@ const Interaction = (() => {
   function wordAtPoint(doc, x, y, precise, tol) {
     let node = null, offset = 0;
     try {
+      /* caretRangeFromPoint 为主力；iOS Safari 上可能因合成层/transform 返回 null，
+       * 此时回退到 carePositionFromPoint（旧版 WebKit API，行为有时不同） */
       if (doc.caretRangeFromPoint) {
         const r = doc.caretRangeFromPoint(x, y);
-        if (!r) return null;
-        node = r.startContainer; offset = r.startOffset;
-      } else if (doc.caretPositionFromPoint) {
+        if (r) { node = r.startContainer; offset = r.startOffset; }
+      }
+      if ((!node || node.nodeType !== 3) && doc.caretPositionFromPoint) {
         const p = doc.caretPositionFromPoint(x, y);
-        if (!p) return null;
-        node = p.offsetNode; offset = p.offset;
-      } else return null;
+        if (p) { node = p.offsetNode; offset = p.offset; }
+      }
+      if (!node || node.nodeType !== 3) return null;
     } catch (e) { return null; }
-    if (!node || node.nodeType !== 3) return null; // 只接受文本节点
     const text = node.nodeValue;
     // 点落在词边界或标点处也能归到相邻单词
     if (!WORD_CH.test(text[offset] || '') && !WORD_CH.test(text[offset - 1] || '')) return null;
@@ -285,8 +286,9 @@ const Interaction = (() => {
         return;
       }
 
-      /* 无单词命中 → 空白区域：按横向位置分区（翻页/呼出工具栏） */
-      if (!isBlankArea(e.target)) return; // 非阅读容器也不拦截（如链接、图片等）
+      /* 无单词命中 → 空白区域（翻页/呼出工具栏）。
+       * 不判断 isBlankArea：iOS 上 caretRangeFromPoint 不可靠，命中失败便作空白处理，
+       * 避免 tap 被静默丢弃。 */
       clearSel(doc);
       const fx = vx / window.innerWidth;
       handlers.onBlank && handlers.onBlank(fx, e.target);
@@ -373,8 +375,8 @@ const Interaction = (() => {
         return;
       }
 
-      /* 无单词命中 → 空白区域（翻页/呼出工具栏） */
-      if (!isBlankArea(el)) return; // 非阅读容器不拦截（如链接、图片等）
+      /* 无单词命中 → 空白区域（翻页/呼出工具栏）。
+       * 不判断 isBlankArea：iOS 上 caretRangeFromPoint 不可靠，命中失败便作空白处理。 */
       e.preventDefault();
       touchSuppressUntil = Date.now() + 1200;
       clearSel(doc);

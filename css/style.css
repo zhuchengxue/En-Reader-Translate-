@@ -191,7 +191,7 @@ body.chrome-hidden .reader-bottom { transform: translateY(100%); opacity: 0; }
 
 .reader-container {
   position: absolute; inset: 48px 0 58px; overflow: hidden;
-  touch-action: manipulation; /* 去除双击缩放延迟，让双击整句手势更跟手 */
+  /* touch-action 已移除：iOS Safari 上 manipulation 会干扰文本点击事件处理 */
   contain: style; /* 仅隔离样式，不用 layout（iOS Safari 的 caretRangeFromPoint 无法穿透 layout 边界） */
 }
 body.chrome-hidden .reader-container { inset: 0; }
