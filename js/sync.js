@@ -42,6 +42,8 @@ const SyncService = (() => {
     return bytes.buffer;
   }
 
+  /* 只导出「还没上传过文件本体」的书文件，避免每次翻页都重传 5MB+ base64。
+   进度/位置等元数据每次都全量推。已上传过的文件设 _syncedAt 时间戳。 */
   async function exportData() {
     const books = await DB.getAll('books');
     const vocab = await DB.getAll('vocab');
@@ -54,6 +56,7 @@ const SyncService = (() => {
       }))
     };
 
+    let needsAnotherPush = false;
     for (const b of books) {
       const meta = {
         id: b.id, title: b.title, author: b.author || '', type: b.type,
@@ -62,13 +65,17 @@ const SyncService = (() => {
         coverColor: b.coverColor || '', coverText: b.coverText || ''
       };
 
-      // 只对有本地文件的书记入文件数据
-      if (!b._remoteOnly) {
+      // 只对「有本地文件 且 还没上传过」的书才记入文件数据
+      if (!b._remoteOnly && !b._syncedAt) {
         try {
           const file = await DB.get('files', b.id);
           if (file && file.data) {
+            const bytes = file.data instanceof ArrayBuffer ? new Uint8Array(file.data) : file.data;
+            let binary = '';
+            for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
             meta._file = toBase64(file.data);
             meta._fileSize = file.data instanceof ArrayBuffer ? file.data.byteLength : file.data.length;
+            needsAnotherPush = true; // 这次推文件体，下次只推元数据
           }
         } catch (e) {}
       }
@@ -76,6 +83,7 @@ const SyncService = (() => {
       result.books.push(meta);
     }
 
+    result._needsAnotherPush = needsAnotherPush;
     return result;
   }
 
@@ -170,7 +178,16 @@ const SyncService = (() => {
         headers: { 'Content-Type': 'application/json' },
         body: payload
       });
-      if (resp.ok) { lastSyncTs = Date.now(); Settings.set({ _syncTs: lastSyncTs }); }
+      if (resp.ok) {
+        lastSyncTs = Date.now();
+        Settings.set({ _syncTs: lastSyncTs });
+        // 标记「文件已上传过」，下次只推元数据
+        const now = Date.now();
+        const all = await DB.getAll('books');
+        for (const b of all) {
+          if (!b._syncedAt) { b._syncedAt = now; await DB.put('books', b); }
+        }
+      }
     } catch (e) {}
   }
 
