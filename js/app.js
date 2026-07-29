@@ -263,7 +263,7 @@
     }
     $$('.w-seen').forEach(s => { try { replaceSpanWithText(s); } catch (e) {} });
 
-    dictCurrent = { word, audio: '', zh: '', phonetic: '', en: '', meanings: [] };
+    dictCurrent = { word, audio: '', zh: '', phonetic: '', en: '', meanings: [], doc };
     $('#dict-word').textContent = word;
     $('#dict-phonetic').textContent = '';
     $('#dict-body').innerHTML = '<div class="dict-loading">查询中…</div>';
@@ -1513,8 +1513,11 @@
     });
     on('#dict-add', 'click', async () => {
       if (!dictCurrent) return;
+      // 保存引用（hideDict 会清空 dictCurrent）
+      const w = dictCurrent.word;
+      const d = dictCurrent.doc;
       await DB.put('vocab', {
-        word: dictCurrent.word,
+        word: w,
         phonetic: dictCurrent.phonetic || '',
         zh: dictCurrent.zh || '',
         en: dictCurrent.en || '',
@@ -1525,16 +1528,11 @@
       toast('已添加');
       hideDict();
       SyncService.schedulePush();
-      /* 加入生词本后，整篇标黄该词（用户主动收藏，强提示） */
-      if (dictCurrent && doc) {
-        const w = dictCurrent.word;
-        // 清掉旧 .w-seen（避免和上次混色），再标当前词
+      /* 加入生词本后，整篇标黄该词 */
+      if (d) {
         $$('.w-seen').forEach(s => { try { replaceSpanWithText(s); } catch (e) {} });
-        dictCurrent.seenSpans = highlightAllTextNodes(doc, w);
-        dictCurrent.seenWord = w;
-        if (typeof toast === 'function' && dictCurrent.seenSpans.length > 1) {
-          setTimeout(() => toast('已标黄全文 ' + dictCurrent.seenSpans.length + ' 处'), 100);
-        }
+        const count = highlightAllTextNodes(d, w).length;
+        if (count > 1) toast('已标黄全文 ' + count + ' 处');
       }
     });
 
