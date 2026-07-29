@@ -374,7 +374,6 @@
         await DB.del('books', b.id);
         await DB.del('files', b.id);
         SyncService.schedulePush();
-        SyncService.deleteBookFile(b.id).catch(() => {});
         renderShelf();
       });
       grid.appendChild(card);
@@ -452,9 +451,7 @@
     }
     await DB.put('files', { id, data: buf });
     await DB.put('books', { id, type: ext, title, author, cover, fileName: opts.name || title, addedAt: Date.now(), progress: 0, location: null, source: opts.source || 'import' });
-    SyncService.schedulePush();
-    // 书文件也同步到云端，其他设备自动下载
-    SyncService.uploadBook(id).catch(() => {});
+    SyncService.schedulePush(); // 含书文件（base64 编码），自动同步到其他设备
     return id;
   }
 
@@ -1491,13 +1488,8 @@
         if (merged > 0) {
           renderShelf();
           if (view() !== 'reader') renderVocab();
-          toast('同步完成，合并了 ' + merged + ' 项更新');
+          toast('同步完成' + (merged ? '，合并了 ' + merged + ' 项' : ''));
         }
-        // 下载远端新书的文件（如有）
-        const dl = await SyncService.downloadMissingBooks((n, total) => {
-          toast('同步书文件 ' + n + '/' + total + '…');
-        });
-        if (dl > 0) { renderShelf(); toast('已下载 ' + dl + ' 本新书'); }
       }
       updateSyncUI();
     } catch (e) { console.error('sync init error', e); }
