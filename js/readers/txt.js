@@ -142,7 +142,7 @@ class TxtReader {
   goTo(target) {
     if (target && typeof target.section === 'number') {
       this.section = target.section;
-      this.page = 0;
+      this.page = (typeof target.page === 'number' && target.page >= 0) ? target.page : 0;
       this.renderSection();
     }
   }

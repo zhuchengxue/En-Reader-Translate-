@@ -61,7 +61,7 @@ const Interaction = (() => {
    * offset 为单词在 node 文本中的起始位置，供句子计算使用。
    * precise=true 时要求点击点必须落在单词包围盒内（单击取词用，避免误触）；
    * precise=false 时宽松（双击整句翻译用，确保点击略偏也能命中）。 */
-  function wordAtPoint(doc, x, y, precise) {
+  function wordAtPoint(doc, x, y, precise, tol) {
     let node = null, offset = 0;
     try {
       if (doc.caretRangeFromPoint) {
@@ -88,25 +88,26 @@ const Interaction = (() => {
     range.setStart(node, s);
     range.setEnd(node, e);
     // 精确模式：点击点必须落在单词的实际包围盒内，否则视为空白
-    if (precise && !pointInRange(x, y, range, 3)) return null;
+    if (precise && !pointInRange(x, y, range, tol || 3)) return null;
     return { word, node, offset: s, range, doc };
   }
 
   /* 兼容 PDF 文本层：优先用已包裹的整词（.w）；否则坐标命中（自然段落/整词）。
    * PDF 文本被拆成非整词片段，必须由 .w 提供完整单词，故 .w 优先。
    * precise=true 时要求点击落在单词盒子内，否则当作空白。 */
-  function resolveHit(doc, x, y, target, precise) {
+  function resolveHit(doc, x, y, target, precise, tol) {
     const span = target && target.closest ? target.closest('.w') : null;
+    const t = tol || 3;
     if (span && span.firstChild && span.firstChild.nodeType === 3) {
       const sr = span.getBoundingClientRect();
-      if (!precise || (x >= sr.left - 3 && x <= sr.right + 3 && y >= sr.top - 3 && y <= sr.bottom + 3)) {
+      if (!precise || (x >= sr.left - t && x <= sr.right + t && y >= sr.top - t && y <= sr.bottom + t)) {
         const range = doc.createRange();
         range.selectNodeContents(span);
         return { word: span.textContent, node: span.firstChild, offset: 0, range, doc };
       }
       return null; // 命中 .w 区域外：不算取词
     }
-    const hit = wordAtPoint(doc, x, y, precise);
+    const hit = wordAtPoint(doc, x, y, precise, tol);
     if (hit && hit.word) return hit;
     return null;
   }
@@ -345,7 +346,7 @@ const Interaction = (() => {
 
       /* 先尝试取词（caretRangeFromPoint），再判断是否空白。
        * iOS Safari 上 elementFromPoint 可能返回容器而非段落，导致 isBlankArea 假阳性。 */
-      const hit = resolveHit(doc, ct.clientX, ct.clientY, el, true);
+      const hit = resolveHit(doc, ct.clientX, ct.clientY, el, true, 10);
 
       if (hit) {
         e.preventDefault();           // 阻止原生选区与合成的 click

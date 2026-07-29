@@ -140,7 +140,10 @@ class EpubReader {
 
   next() { this.rendition && this.rendition.next(); }
   prev() { this.rendition && this.rendition.prev(); }
-  goTo(href) { this.rendition && this.rendition.display(href); }
+  goTo(target) {
+    const cfi = (target && typeof target === 'object' && target.cfi) ? target.cfi : target;
+    this.rendition && this.rendition.display(cfi);
+  }
   getToc() { return this.toc; }
 
   /* ---------- 书签 / 朗读 ---------- */

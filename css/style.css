@@ -192,7 +192,7 @@ body.chrome-hidden .reader-bottom { transform: translateY(100%); opacity: 0; }
 .reader-container {
   position: absolute; inset: 48px 0 58px; overflow: hidden;
   touch-action: manipulation; /* 去除双击缩放延迟，让双击整句手势更跟手 */
-  contain: layout style; /* 隔离阅读区布局，避免大内容影响外部重排 */
+  contain: style; /* 仅隔离样式，不用 layout（iOS Safari 的 caretRangeFromPoint 无法穿透 layout 边界） */
 }
 body.chrome-hidden .reader-container { inset: 0; }
 
@@ -207,7 +207,7 @@ body.chrome-hidden .reader-container { inset: 0; }
   line-height: 1.9; transition: transform .18s ease-out;
   padding: 28px 24px;
   will-change: transform; /* 翻页走 GPU 合成层，避免主线程重排卡顿 */
-  contain: layout style;
+  contain: style; /* 不用 layout：iOS Safari caretRangeFromPoint 无��穿透布局边界 */
 }
 .txt-content p { margin-bottom: 1em; text-align: justify; }
 
