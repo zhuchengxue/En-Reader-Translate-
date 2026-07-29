@@ -242,17 +242,15 @@ async function clearSentPopup(page) {
     const tn = p.firstChild; const text = tn.nodeValue;
     const m = text.match(/the/i);
     if (!m) return { ok: false, reason: 'no "the"' };
-    // 模拟点击单词：先包一个 w-active w-stay span（这就是 showDict 做的）
     const r = document.createRange(); r.setStart(tn, m.index); r.setEnd(tn, m.index + 3);
     const span = document.createElement('span');
     span.className = 'w-active w-stay';
     try { r.surroundContents(span); } catch (e) { return { ok: false, reason: 'surround fail: ' + e.message }; }
-    // 调用 highlightAllTextNodes
     if (typeof window.__highlightAllTextNodes !== 'function') return { ok: false, reason: 'no hl fn' };
     const list = window.__highlightAllTextNodes(document, 'the');
     return { ok: true, count: list.length, wseen: document.querySelectorAll('.w-seen').length };
   });
-  check('整本高亮产生 .w-seen', hlRes.ok && hlRes.count > 0 && hlRes.wseen > 0, JSON.stringify(hlRes));
+  check('highlightAllTextNodes 产生 .w-seen', hlRes.ok && hlRes.count > 0 && hlRes.wseen > 0, JSON.stringify(hlRes));
   const ov = await page.evaluate(() => {
     const p = document.querySelector('#sent-popup').getBoundingClientRect();
     const sel = window.getSelection();

@@ -1,6 +1,6 @@
 /* 主控逻辑：书架 / 导入 / 阅读 / 生词本 / 设置 / 统计 */
 (() => {
-  const APP_VER = '2026-07-29.35'; // 前端版本号：诊断面板可见 + index.html 版本守卫比对
+  const APP_VER = '2026-07-29.36'; // 前端版本号：诊断面板可见 + index.html 版本守卫比对
   window.APP_VER = APP_VER; // 暴露给 index.html 内联守卫脚本做版本一致性校验
   const $ = s => document.querySelector(s);
   const $$ = s => Array.from(document.querySelectorAll(s));
@@ -285,10 +285,8 @@
       } catch (e) {}
     }
 
-    /* 「全本高亮」开关开启时，把整篇所有匹配词包上 .w-seen */
-    if (settings.persistLookup && doc) {
-      dictCurrent.seenSpans = highlightAllTextNodes(doc, word);
-    }
+    /* 查新词前清理旧的 .w-seen 高亮（确保每次只显示当前词的标黄） */
+    $$('.w-seen').forEach(s => { try { replaceSpanWithText(s); } catch (e) {} });
 
     /* 增量渲染：翻译与词典释义并行获取，谁先回来先显示谁，互不阻塞 */
     const render = () => {
@@ -391,17 +389,11 @@
 
   function hideDict() {
     $('#dict-popup').classList.add('hidden');
-    const keepSeen = settings.persistLookup;
+    /* 移除被点击单词的 w-stay span（蓝色高亮） */
     if (dictCurrent && dictCurrent.span) {
       try { replaceSpanWithText(dictCurrent.span); } catch (e) {}
     }
-    if (dictCurrent && dictCurrent.seenSpans && !keepSeen) {
-      for (const s of dictCurrent.seenSpans) {
-        try { replaceSpanWithText(s); } catch (e) {}
-      }
-    }
-    /* 查新词前清理旧 .w-seen（showDict 内部会重建） */
-    if (!keepSeen) $$('.w-seen').forEach(s => { try { replaceSpanWithText(s); } catch (e) {} });
+    /* 保留 .w-seen 标黄（用户加入生词本或开了整本高亮时）—— 下次点新词时由 showDict 清理 */
     dictCurrent = null;
     lastDictPos = null;
   }
@@ -1201,7 +1193,6 @@
   function updateSegs() {
     $$('#click-mode-seg button').forEach(b => b.classList.toggle('on', b.dataset.m === settings.clickMode));
     $$('#dict-lang-seg button').forEach(b => b.classList.toggle('on', b.dataset.dl === (settings.dictLang || 'both')));
-    $$('#persist-lookup-seg button').forEach(b => b.classList.toggle('on', (b.dataset.pl === '1') === !!settings.persistLookup));
     $$('#auto-resume-seg button').forEach(b => b.classList.toggle('on', (b.dataset.ar === '1') === !!settings.autoResumeBook));
   }
 
@@ -1375,14 +1366,7 @@
       reader && reader.setPageMode && reader.setPageMode(m);
     });
 
-    /* 查词高亮 / 启动行为 seg（移至设置面板） */
-    $$('#persist-lookup-seg button').forEach(b => b.addEventListener('click', () => {
-      settings = Settings.set({ persistLookup: b.dataset.pl === '1' });
-      updateSegs();
-      if (!settings.persistLookup) {
-        $$('.w-seen').forEach(s => { try { replaceSpanWithText(s); } catch (e) {} });
-      }
-    }));
+    /* 启动行为 seg */
     $$('#auto-resume-seg button').forEach(b => b.addEventListener('click', () => {
       settings = Settings.set({ autoResumeBook: b.dataset.ar === '1' });
       updateSegs();
@@ -1538,9 +1522,20 @@
         addedAt: Date.now()
       });
       updateVocabCount();
-      toast('已加���生词本');
+      toast('已添加');
       hideDict();
       SyncService.schedulePush();
+      /* 加入生词本后，整篇标黄该词（用户主动收藏，强提示） */
+      if (dictCurrent && doc) {
+        const w = dictCurrent.word;
+        // 清掉旧 .w-seen（避免和上次混色），再标当前词
+        $$('.w-seen').forEach(s => { try { replaceSpanWithText(s); } catch (e) {} });
+        dictCurrent.seenSpans = highlightAllTextNodes(doc, w);
+        dictCurrent.seenWord = w;
+        if (typeof toast === 'function' && dictCurrent.seenSpans.length > 1) {
+          setTimeout(() => toast('已标黄全文 ' + dictCurrent.seenSpans.length + ' 处'), 100);
+        }
+      }
     });
 
     /* 句子弹层 */
