@@ -1,6 +1,6 @@
 /* 主控逻辑：书架 / 导入 / 阅读 / 生词本 / 设置 / 统计 */
 (() => {
-  const APP_VER = '2026-07-29.26'; // 前端版本号：诊断面板可见 + index.html 版本守卫比对
+  const APP_VER = '2026-07-29.27'; // 前端版本号：诊断面板可见 + index.html 版本守卫比对
   window.APP_VER = APP_VER; // 暴露给 index.html 内联守卫脚本做版本一致性校验
   const $ = s => document.querySelector(s);
   const $$ = s => Array.from(document.querySelectorAll(s));
@@ -920,40 +920,34 @@
     $('#settings-panel').classList.add('open'); $('#settings-mask').classList.remove('hidden');
   }
   function closeSettings() { $('#settings-panel').classList.remove('open'); $('#settings-mask').classList.add('hidden'); }
-  /* 书架顶「同步」按钮：已配 token → 立即触发同步；未配 → 打开设置 */
-  async function quickSync() {
-    SyncService.init();
-    if (!SyncService.getToken()) { openSettings(); return; }
-    toast('同步中…');
-    const n = await SyncService.syncOnce();
-    if (n > 0) { renderShelf(); toast('同步完成，合并了 ' + n + ' 项'); }
-    else toast('已是最新数据');
+  /* 书架顶「同步」按钮：直接控制内联同步面板的展开/收起 */
+  function _toggleSyncPanel() {
+    const panel = $('#shelf-sync-panel');
+    const input = $('#shelf-sync-input');
+    if (!panel) return;
+    if (panel.classList.contains('hidden')) {
+      SyncService.init();
+      input.value = SyncService.getToken() || '';
+      panel.classList.remove('hidden');
+      setTimeout(() => input && input.focus(), 50);
+    } else {
+      panel.classList.add('hidden');
+    }
   }
-  window._openSettings = openSettings;
-  window._quickSync = quickSync;
-  function closeProxyHelp() { $('#proxy-help-panel').classList.remove('open'); $('#proxy-help-mask').classList.add('hidden'); }
-
-  /* 同步口令 UI */
-  function updateSyncUI() {
-    const token = SyncService.getToken() || '';
-    const inp = $('#sync-token-input');
-    const stat = $('#sync-status');
-    if (inp) inp.value = token;
-    if (stat) stat.textContent = token ? '已设置 · 书架/进度/生词自动跨设备同步' : '未设置 · 多台电脑填入相同口令即可自动同步';
-  }
-  function saveSyncToken() {
-    const inp = $('#sync-token-input');
-    const val = (inp && inp.value || '').trim();
+  async function _saveSyncToken() {
+    const input = $('#shelf-sync-input');
+    const val = (input && input.value || '').trim();
     if (!val) { toast('请输入同步口令'); return; }
     SyncService.setToken(val);
-    updateSyncUI();
-    toast('同步口令已保存');
-    setTimeout(() => {
-      SyncService.syncOnce().then(n => {
-        if (n > 0) { renderShelf(); toast('同步完成，合并了 ' + n + ' 条数据'); }
-      });
-    }, 300);
+    toast('已保存');
+    const n = await SyncService.syncOnce();
+    if (n > 0) { renderShelf(); toast('同步完成，合并了 ' + n + ' 项'); }
+    else toast('已是最新');
+    $('#shelf-sync-panel').classList.add('hidden');
   }
+  window._toggleSync = _toggleSyncPanel;
+  window._saveSyncToken = _saveSyncToken;
+  function closeProxyHelp() { $('#proxy-help-panel').classList.remove('open'); $('#proxy-help-mask').classList.add('hidden'); }
 
   /* ---------- 兑换码激活 / 试用限次 ---------- */
   function openActivate() {
@@ -1405,10 +1399,11 @@
       else toast('当前环境不支持自动复制');
     });
 
-    /* 同步口令 */
-    on('#sync-token-save', 'click', saveSyncToken);
-    on('#sync-token-input', 'keydown', (e) => {
-      if (e.key === 'Enter') { e.preventDefault(); saveSyncToken(); }
+    /* 书架同步面板（点开同步按钮展开） */
+    on('#shelf-sync-save', 'click', _saveSyncToken);
+    on('#shelf-sync-cancel', 'click', () => $('#shelf-sync-panel').classList.add('hidden'));
+    on('#shelf-sync-input', 'keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); _saveSyncToken(); }
     });
 
     /* 词典卡片 */
@@ -1503,7 +1498,6 @@
           toast('同步完成' + (merged ? '，合并了 ' + merged + ' 项' : ''));
         }
       }
-      updateSyncUI();
     } catch (e) { console.error('sync init error', e); }
     /* 自动恢复上次打开的书（含阅读位置，已存于 books.location），刷新不再关闭 */
     try {
