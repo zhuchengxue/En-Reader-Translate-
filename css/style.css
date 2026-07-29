@@ -75,7 +75,7 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
 }
 .shelf-sync-panel.hidden { display: none; }
 .shelf-sync-input {
-  flex: 1; min-width: 0; height: 40px; padding: 0 14px;
+  flex: 1; min-width: 0; max-width: 480px; height: 40px; padding: 0 14px;
   border: 1px solid var(--border); border-radius: 10px;
   background: var(--bg3); color: var(--text); font-size: 14px; outline: none;
 }
