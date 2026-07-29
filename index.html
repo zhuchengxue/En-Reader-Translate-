@@ -7,7 +7,7 @@
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%233b82f6'/%3E%3Cpath d='M50 30c-6-4-15-5-22-2v44c7-3 16-2 22 2 6-4 15-5 22-2V28c-7-3-16-2-22 2z' fill='white'/%3E%3Cpath d='M50 30v44' stroke='%233b82f6' stroke-width='4'/%3E%3C/svg%3E">
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#3b82f6">
-<link rel="stylesheet" href="css/style.css?v=2026-07-29.32">
+<link rel="stylesheet" href="css/style.css?v=2026-07-29.33">
 </head>
 <body data-theme="light" data-view="shelf">
 
@@ -95,9 +95,6 @@
       </button>
       <button id="btn-bookmark" class="icon-btn" title="书签">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path></svg>
-      </button>
-      <button id="btn-persist-lookup" class="icon-btn" title="整本高亮查过的词（开关）">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 4h2a2 2 0 0 1 2 2v14l-6-3-6 3-6-3V6a2 2 0 0 1 2-2h2"/><path d="M9 2h6v4H9z"/></svg>
       </button>
       <button id="btn-fs" class="icon-btn" title="全屏 (F)">
         <svg class="ic-enter" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3H5a2 2 0 0 0-2 2v3"></path><path d="M21 8V5a2 2 0 0 0-2-2h-3"></path><path d="M3 16v3a2 2 0 0 0 2 2h3"></path><path d="M16 21h3a2 2 0 0 0 2-2v-3"></path></svg>
@@ -201,6 +198,20 @@
         <button data-dl="both" class="on">中英都显示</button>
         <button data-dl="zh">只显示中文</button>
         <button data-dl="en">只显示英文</button>
+      </div>
+    </div>
+    <div class="set-row">
+      <span class="set-label">查词高亮</span>
+      <div class="seg" id="persist-lookup-seg">
+        <button data-pl="0" class="on">仅当前词</button>
+        <button data-pl="1">整本高亮</button>
+      </div>
+    </div>
+    <div class="set-row">
+      <span class="set-label">启动时</span>
+      <div class="seg" id="auto-resume-seg">
+        <button data-ar="0" class="on">进入书架</button>
+        <button data-ar="1">继续上一次看的书</button>
       </div>
     </div>
     <div class="set-row">
@@ -346,7 +357,7 @@ export default {
 /* 版本守卫：若浏览器缓存喂了旧版 app.js（APP_VER 与本页期望不符），
  * 自动注销 SW + 清空 Cache Storage + 强制带参重载一次，自愈旧缓存混跑。
  * sessionStorage 防死循环：自愈一次后若仍不符则停手（说明是别的问题）。 */
-window.__EXPECT_VER = '2026-07-29.32';
+window.__EXPECT_VER = '2026-07-29.33';
 window.addEventListener('load', function () {
   try {
     if (window.APP_VER === window.__EXPECT_VER) { sessionStorage.removeItem('ver-fix'); return; }
@@ -363,15 +374,15 @@ window.addEventListener('load', function () {
   } catch (e) {}
 });
 </script>
-<script src="js/db.js?v=2026-07-29.32"></script>
-<script src="js/services.js?v=2026-07-29.32"></script>
-<script src="js/interaction.js?v=2026-07-29.32"></script>
-<script src="js/readers/txt.js?v=2026-07-29.32"></script>
-<script src="js/readers/epub.js?v=2026-07-29.32"></script>
-<script src="js/readers/pdf.js?v=2026-07-29.32"></script>
-<script src="js/license.js?v=2026-07-29.32"></script>
-<script src="js/gutenberg.js?v=2026-07-29.32"></script>
-<script src="js/sync.js?v=2026-07-29.32"></script>
-<script src="js/app.js?v=2026-07-29.32"></script>
+<script src="js/db.js?v=2026-07-29.33"></script>
+<script src="js/services.js?v=2026-07-29.33"></script>
+<script src="js/interaction.js?v=2026-07-29.33"></script>
+<script src="js/readers/txt.js?v=2026-07-29.33"></script>
+<script src="js/readers/epub.js?v=2026-07-29.33"></script>
+<script src="js/readers/pdf.js?v=2026-07-29.33"></script>
+<script src="js/license.js?v=2026-07-29.33"></script>
+<script src="js/gutenberg.js?v=2026-07-29.33"></script>
+<script src="js/sync.js?v=2026-07-29.33"></script>
+<script src="js/app.js?v=2026-07-29.33"></script>
 </body>
 </html>

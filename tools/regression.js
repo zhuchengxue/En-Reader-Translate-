@@ -336,6 +336,7 @@ async function clearSentPopup(page) {
   check('PDF 单击可翻译', pdfPopupOpen && /MOCK翻译/.test(pdfDict), 'open=' + pdfPopupOpen + ' body=' + pdfDict.slice(0, 24));
 
   // 持久化：刷新后仍在书中（不关闭）
+  await page.evaluate(() => { const s = JSON.parse(localStorage.getItem('en-reader-settings')||'{}'); s.autoResumeBook = true; localStorage.setItem('en-reader-settings', JSON.stringify(s)); });
   await page.reload(); await page.waitForTimeout(2500); await waitLoading();
   const persisted = await page.evaluate(() => ({ view: document.body.dataset.view, hasReader: !!document.querySelector('#reader-container .txt-viewport, #reader-container .epub-holder, #reader-container .pdf-stage'), last: (JSON.parse(localStorage.getItem('en-reader-settings')||'{}')).lastBookId }));
   check('刷新后仍在书中', persisted.view === 'reader' && persisted.hasReader, JSON.stringify(persisted));

@@ -68,7 +68,7 @@ const DB = (() => {
 /* localStorage 设置 */
 const Settings = (() => {
   const KEY = 'en-reader-settings';
-  const defaults = { theme: 'light', fontSize: 18, lineHeight: 1.9, marginSize: 'medium', clickMode: 'both', pageMode: 'single', pageAnim: 'slide', translateProxy: '', lastBookId: '', syncToken: '', dictLang: 'both', persistLookup: false };
+  const defaults = { theme: 'light', fontSize: 18, lineHeight: 1.9, marginSize: 'medium', clickMode: 'both', pageMode: 'single', pageAnim: 'slide', translateProxy: '', lastBookId: '', syncToken: '', dictLang: 'both', persistLookup: false, autoResumeBook: false };
   let cache = null;
   return {
     get() {
