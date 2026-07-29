@@ -1,6 +1,6 @@
 /* 主控逻辑：书架 / 导入 / 阅读 / 生词本 / 设置 / 统计 */
 (() => {
-  const APP_VER = '2026-07-29.31'; // 前端版本号：诊断面板可见 + index.html 版本守卫比对
+  const APP_VER = '2026-07-29.32'; // 前端版本号：诊断面板可见 + index.html 版本守卫比对
   window.APP_VER = APP_VER; // 暴露给 index.html 内联守卫脚本做版本一致性校验
   const $ = s => document.querySelector(s);
   const $$ = s => Array.from(document.querySelectorAll(s));
@@ -198,8 +198,30 @@
   }
 
   /* ---------- 词典卡片 ---------- */
+  /* 把 <span>...</span> 还原成纯文本节点（保持父级结构稳定，避免 normalize 报错） */
+  function replaceSpanWithText(span, doc) {
+    const ownerDoc = doc || (span.ownerDocument || document);
+    if (!span || !span.parentNode) return;
+    const parent = span.parentNode;
+    while (span.firstChild) parent.insertBefore(span.firstChild, span);
+    parent.removeChild(span);
+    if (parent.normalize) parent.normalize();
+  }
+  /* 正则元字符转义 */
+  function escRe(s) { return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+  /* HTML 实体转义 */
+  function escHtml(s) { return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+
   async function showDict(word, x, y, range, doc) {
     const popup = $('#dict-popup');
+
+    /* 清理上一次查词留下的高亮（修复 bug：旧 span 没被清除导致高亮残留） */
+    if (dictCurrent && dictCurrent.span) {
+      try { replaceSpanWithText(dictCurrent.span, doc); } catch (e) {}
+    }
+    /* 清理「全本高亮」模式下之前查的词 */
+    $$('.w-seen').forEach(s => { try { replaceSpanWithText(s, doc); } catch (e) {} });
+
     dictCurrent = { word, audio: '', zh: '', phonetic: '', en: '', meanings: [] };
     $('#dict-word').textContent = word;
     $('#dict-phonetic').textContent = '';
@@ -219,6 +241,59 @@
         range.insertNode(span);
         dictCurrent.span = span;
       } catch (e) {}
+    }
+
+    /* 「全本高亮」开关开启时，把整篇（当前文档）所有匹配词也包上 .w-seen */
+    if (settings.persistLookup && doc) {
+      const seenSpans = [];
+      const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT);
+      const wordRe = new RegExp('\\b' + escRe(word) + '\\b', 'gi');
+      const textNodes = [];
+      let tn;
+      while ((tn = walker.nextNode())) {
+        // 跳过已经在 w-stay / w-seen span 里的文本节点
+        let p = tn.parentNode;
+        let inSpan = false;
+        while (p && p !== doc.body) {
+          if (p.classList && (p.classList.contains('w-stay') || p.classList.contains('w-seen'))) { inSpan = true; break; }
+          p = p.parentNode;
+        }
+        if (!inSpan && wordRe.test(tn.nodeValue)) textNodes.push(tn);
+        wordRe.lastIndex = 0;
+      }
+      for (const tn of textNodes) {
+        const text = tn.nodeValue;
+        const r = doc.createRange();
+        let m, last = 0;
+        const re = new RegExp('\\b' + escRe(word) + '\\b', 'gi');
+        const frags = [];
+        while ((m = re.exec(text)) !== null) {
+          r.setStart(tn, m.index);
+          r.setEnd(tn, m.index + word.length);
+          frags.push(r.cloneContents());
+          last = m.index + word.length;
+        }
+        // 重写该文本节点为「原始前缀 + <span class="w-seen">match</span> + 剩余」
+        let outHtml = '';
+        let cursor = 0;
+        const re2 = new RegExp('\\b' + escRe(word) + '\\b', 'gi');
+        let mm;
+        while ((mm = re2.exec(text)) !== null) {
+          outHtml += escHtml(text.slice(cursor, mm.index)) + '<span class="w-seen">' + escHtml(text.slice(mm.index, mm.index + word.length)) + '</span>';
+          cursor = mm.index + word.length;
+        }
+        outHtml += escHtml(text.slice(cursor));
+        const tmp = doc.createElement('span');
+        tmp.innerHTML = outHtml;
+        const parent = tn.parentNode;
+        while (tmp.firstChild) {
+          const ch = tmp.firstChild;
+          parent.insertBefore(ch, tn);
+          if (ch.nodeType === 1 && ch.classList.contains('w-seen')) seenSpans.push(ch);
+        }
+        parent.removeChild(tn);
+      }
+      dictCurrent.seenSpans = seenSpans;
     }
 
     /* 增量渲染：翻译与词典释义并行获取，谁先回来先显示谁，互不阻塞 */
@@ -322,16 +397,15 @@
 
   function hideDict() {
     $('#dict-popup').classList.add('hidden');
-    /* 移除持久高亮 span：还原为纯文本节点 */
+    /* 移除持久高亮 span + 全本高亮 span（若开关开启则保留 seenSpans） */
+    const keepSeen = settings.persistLookup;
     if (dictCurrent && dictCurrent.span) {
-      try {
-        const span = dictCurrent.span;
-        const parent = span.parentNode;
-        if (parent) {
-          parent.replaceChild(document.createTextNode(span.textContent), span);
-          if (parent.normalize) parent.normalize();
-        }
-      } catch (e) {}
+      try { replaceSpanWithText(dictCurrent.span); } catch (e) {}
+    }
+    if (dictCurrent && dictCurrent.seenSpans && !keepSeen) {
+      for (const s of dictCurrent.seenSpans) {
+        try { replaceSpanWithText(s); } catch (e) {}
+      }
     }
     dictCurrent = null;
     lastDictPos = null;
@@ -1148,6 +1222,11 @@
     $$('#pageanim-seg button').forEach(b => b.classList.toggle('on', b.dataset.pa === settings.pageAnim));
   }
 
+  function updatePersistBtn() {
+    const btn = $('#btn-persist-lookup');
+    if (btn) btn.classList.toggle('on', !!settings.persistLookup);
+  }
+
   /* ---------- 生词本 ---------- */
   async function renderVocab() {
     const list = (await DB.getAll('vocab')).sort((a, b) => b.addedAt - a.addedAt);
@@ -1301,6 +1380,17 @@
       settings = Settings.set({ pageMode: m });
       updatePageModeBtn();
       reader && reader.setPageMode && reader.setPageMode(m);
+    });
+
+    /* 整本高亮查过的词开关 */
+    on('#btn-persist-lookup', 'click', () => {
+      settings = Settings.set({ persistLookup: !settings.persistLookup });
+      updatePersistBtn();
+      if (!settings.persistLookup) {
+        // 关闭时清掉所有 .w-seen 高亮
+        $$('.w-seen').forEach(s => { try { replaceSpanWithText(s); } catch (e) {} });
+      }
+      toast('整本高亮查过的词：' + (settings.persistLookup ? '开' : '关'));
     });
 
     /* 全屏：按钮 + 状态同步 + F 快捷键（阅读视图、非输入框）+ 退出浮钮 */
@@ -1513,6 +1603,7 @@
       updateFontLabel();
       updatePageModeBtn();
       updatePageAnimSeg();
+      updatePersistBtn();
       updateActivateStatus();
     } catch (e) { console.error('ui-init error', e); }
     /* 授权检查：未激活提示试用剩余；试用耗尽弹激活模态（仅真实浏览器，测试环境不拦） */
