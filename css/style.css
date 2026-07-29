@@ -205,7 +205,7 @@ body.chrome-hidden .reader-container { inset: 0; }
   height: 100%; column-fill: auto;
   font-family: Georgia, "Times New Roman", serif;
   line-height: 1.9; transition: transform .18s ease-out;
-  padding: 28px 0;
+  padding: 28px 24px;
   will-change: transform; /* 翻页走 GPU 合成层，避免主线程重排卡顿 */
   contain: layout style;
 }
@@ -311,10 +311,19 @@ body.fs-active .fs-exit-fab { display: flex; }
   position: absolute; left: 50%; bottom: 64px; transform: translate(-50%, 20px);
   width: min(480px, calc(100vw - 32px)); z-index: 60;
   background: var(--bg3); border: 1px solid var(--border); border-radius: 16px;
-  box-shadow: 0 10px 40px var(--shadow); padding: 18px 22px;
+  box-shadow: 0 10px 40px var(--shadow); padding: 14px 22px 18px;
   opacity: 0; pointer-events: none; transition: all .22s;
 }
 .settings-panel.open { opacity: 1; pointer-events: auto; transform: translate(-50%, 0); }
+.set-head { display: flex; align-items: center; justify-content: space-between; margin: 2px 0 8px; }
+.set-title { font-size: 15px; font-weight: 600; color: var(--text); }
+.set-close {
+  width: 32px; height: 32px; border-radius: 50%; flex: none;
+  display: inline-flex; align-items: center; justify-content: center;
+  color: var(--text2); font-size: 16px; line-height: 1;
+  background: var(--bg2); border: 1px solid var(--border); transition: all .15s;
+}
+.set-close:hover { color: var(--text); background: var(--bg); border-color: var(--text2); }
 .set-row { display: flex; align-items: center; gap: 16px; padding: 10px 0; }
 .set-label { font-size: 13px; color: var(--text2); width: 64px; flex-shrink: 0; }
 .set-hint { font-size: 12px; color: var(--text2); line-height: 1.5; }
@@ -497,6 +506,9 @@ body[data-theme="dark"] .set-hint.err { color: #f87171; }
   .settings-panel { width: calc(100vw - 24px); bottom: 64px; }
   .dict-popup { width: min(340px, calc(100vw - 20px)); }
   .sent-popup { width: calc(100vw - 16px); }
+  /* 移动端阅读留白：文字不再贴边，阅读更舒展 */
+  .txt-content { padding: 22px 18px; }
+  .pdf-stage { padding: 16px; }
 }
 @media (max-width: 640px) {
   .shelf-header, .sub-header { padding-left: 16px; padding-right: 16px; }
@@ -525,10 +537,12 @@ body[data-theme="dark"] .set-hint.err { color: #f87171; }
   .trial-banner { padding-top: calc(7px + env(safe-area-inset-top)); }
 }
 
-/* ===== 尊重系统「减少动态效果」偏好：关闭翻页/抽屉/卡片动画，避免眩晕 ===== */
+/* ===== 尊重系统「减少动态效果」偏好：关闭抽屉/卡片等装饰动画，避免眩晕 =====
+   但用户主动选择的「翻页效果」不被关闭（翻页是核心交互，且由滑动手势驱动）。 */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition-duration: .001ms !important; animation-duration: .001ms !important; animation-iteration-count: 1 !important; }
-  .txt-content { transition: none !important; }
+  .txt-content, .epub-holder, .pdf-stage,
+  .txt-content *, .epub-holder *, .pdf-stage * { transition-duration: .26s !important; animation-duration: .26s !important; }
 }
 
 /* ===== 试用提示条 ===== */

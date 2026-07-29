@@ -321,10 +321,23 @@ const Interaction = (() => {
       if (!touchStart) return;
       const ct = e.changedTouches && e.changedTouches[0];
       if (!ct) { touchStart = null; return; }
-      const dx = Math.abs(ct.clientX - touchStart.x);
-      const dy = Math.abs(ct.clientY - touchStart.y);
-      const dt = Date.now() - touchStart.t;
+      const sx = touchStart.x, sy = touchStart.y, st = touchStart.t;
+      const dx = Math.abs(ct.clientX - sx);
+      const dy = Math.abs(ct.clientY - sy);
+      const dt = Date.now() - st;
       touchStart = null;
+      /* 横向滑动翻页：移动端主翻页手势（左滑=下一页，右滑=上一页）。
+         必须早于「滚动/点击」判定，否则滑动被当成滚动而翻不了页。 */
+      if (dx > 40 && dx > dy * 1.4 && dt < 800) {
+        const el0 = doc.elementFromPoint(ct.clientX, ct.clientY);
+        if (el0 && !inChrome(el0)) {
+          e.preventDefault();           // 阻止原生选区与合成的 click
+          touchSuppressUntil = Date.now() + 1200;
+          clearSel(doc);
+          handlers.onSwipe && handlers.onSwipe(ct.clientX - sx < 0 ? 'left' : 'right');
+          return;
+        }
+      }
       if (dx > 10 || dy > 10 || dt > 600) return; // 移动过大视为滚动，不处理
 
       const off = off0();

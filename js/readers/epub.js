@@ -90,7 +90,7 @@ class EpubReader {
       const doc = contents.document;
       /* 注入瞬时高亮样式（点击单词的 .w-active 由 Interaction.flashWord 临时创建，无需常驻 span） */
       const st = doc.createElement('style');
-      st.textContent = '.w-active{background:rgba(59,130,246,.22);border-radius:2px}.tts-hl{background:rgba(59,130,246,.24);border-radius:2px}';
+      st.textContent = '.w-active{background:rgba(59,130,246,.22);border-radius:2px}.tts-hl{background:rgba(59,130,246,.24);border-radius:2px}body{padding-left:16px!important;padding-right:16px!important}';
       doc.head.appendChild(st);
       const offsetFn = () => {
         try {
