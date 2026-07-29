@@ -1,6 +1,6 @@
 /* 主控逻辑：书架 / 导入 / 阅读 / 生词本 / 设置 / 统计 */
 (() => {
-  const APP_VER = '2026-07-28.12'; // 前端版本号：诊断面板可见 + index.html 版本守卫比对
+  const APP_VER = '2026-07-28.13'; // 前端版本号：诊断面板可见 + index.html 版本守卫比对
   window.APP_VER = APP_VER; // 暴露给 index.html 内联守卫脚本做版本一致性校验
   const $ = s => document.querySelector(s);
   const $$ = s => Array.from(document.querySelectorAll(s));
@@ -1444,21 +1444,11 @@
    * 仅当页面【已被旧 SW 控制】时才刷新，首次访问（无旧 SW）不额外刷新，也不影响无头测试。 */
   function registerSW() {
     if (!('serviceWorker' in navigator) || location.protocol.indexOf('http') !== 0) return;
-    let _swReloaded = false;
-    const reloadOnce = () => { if (_swReloaded) return; _swReloaded = true; location.reload(); };
-    navigator.serviceWorker.register('sw.js').then((reg) => {
-      if (reg.waiting) { reg.waiting.postMessage('skip-waiting'); reloadOnce(); return; }
-      reg.addEventListener('updatefound', () => {
-        const installing = reg.installing;
-        if (!installing) return;
-        installing.addEventListener('statechange', () => {
-          if (installing.state === 'installed' && navigator.serviceWorker.controller) {
-            installing.postMessage('skip-waiting');
-            reloadOnce();
-          }
-        });
-      });
-    }).catch(() => {});
+    /* 只负责注册。新 SW 在 sw.js 内 self.skipWaiting()+clients.claim() 会静默接管当前页面，
+     * 配合 fetch 的「网络优先」策略，新版本的 HTML/JS/CSS 由 SW 直接回源返回，
+     * 无需页面硬刷新即可生效 —— 避免「重新打开网址一直闪烁刷新」的不良体验。
+     * （旧实现会在检测到新 SW 时 page.reload，每次发布后重开都会闪一下，已移除。） */
+    navigator.serviceWorker.register('sw.js').catch(() => {});
   }
 
   document.addEventListener('DOMContentLoaded', init);
