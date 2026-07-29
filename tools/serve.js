@@ -81,10 +81,39 @@ async function handleGutenberg(req, res) {
   }
 }
 
+/* 本地同步 mock：存 .workbuddy/sync-dev.json（仅开发用，不进入 git） */
+const SYNC_FILE = path.join(ROOT, '.workbuddy', 'sync-dev.json');
+async function handleSync(req, res) {
+  const cors = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'GET, PUT, OPTIONS', 'Content-Type': 'application/json' };
+  if (req.method === 'OPTIONS') { res.writeHead(204, cors); res.end(); return; }
+  const url = new URL(req.url, 'http://localhost');
+  const token = (url.searchParams.get('token') || '').trim().slice(0, 64);
+  if (!token) { res.writeHead(400, cors); res.end(JSON.stringify({ error: 'Missing token' })); return; }
+  let store = {};
+  try { store = JSON.parse(fs.readFileSync(SYNC_FILE, 'utf8')); } catch (e) {}
+  const key = 'sync:' + token;
+  if (req.method === 'GET') {
+    res.writeHead(200, cors);
+    res.end(JSON.stringify({ data: store[key] || { books: [], vocab: [] }, ts: Date.now() }));
+    return;
+  }
+  if (req.method === 'PUT') {
+    const body = JSON.parse(await readBody(req));
+    if (!body || !body.data) { res.writeHead(400, cors); res.end(JSON.stringify({ error: 'Missing data' })); return; }
+    store[key] = body.data;
+    fs.mkdirSync(path.dirname(SYNC_FILE), { recursive: true });
+    fs.writeFileSync(SYNC_FILE, JSON.stringify(store, null, 2), 'utf8');
+    res.writeHead(200, cors); res.end(JSON.stringify({ ok: true, ts: Date.now() }));
+    return;
+  }
+  res.writeHead(405, cors); res.end('Method not allowed');
+}
+
 const srv = http.createServer(async (req, r) => {
   const p = decodeURIComponent(req.url.split('?')[0]);
   if (p === '/api/redeem') return handleRedeem(req, r);
   if (p === '/api/gutenberg') return handleGutenberg(req, r);
+  if (p === '/api/sync') return handleSync(req, r);
   let fp = path.normalize(path.join(ROOT, p === '/' ? '/index.html' : p));
   if (!fp.startsWith(ROOT) || !fs.existsSync(fp) || fs.statSync(fp).isDirectory()) { r.writeHead(404); r.end('nf'); return; }
   const st = fs.statSync(fp);

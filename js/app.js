@@ -1,6 +1,6 @@
 /* 主控逻辑：书架 / 导入 / 阅读 / 生词本 / 设置 / 统计 */
 (() => {
-  const APP_VER = '2026-07-28.18'; // 前端版本号：诊断面板可见 + index.html 版本守卫比对
+  const APP_VER = '2026-07-28.20'; // 前端版本号：诊断面板可见 + index.html 版本守卫比对
   window.APP_VER = APP_VER; // 暴露给 index.html 内联守卫脚本做版本一致性校验
   const $ = s => document.querySelector(s);
   const $$ = s => Array.from(document.querySelectorAll(s));
@@ -373,6 +373,7 @@
         if (!confirm('删除《' + b.title + '》？')) return;
         await DB.del('books', b.id);
         await DB.del('files', b.id);
+        SyncService.schedulePush();
         renderShelf();
       });
       grid.appendChild(card);
@@ -450,6 +451,7 @@
     }
     await DB.put('files', { id, data: buf });
     await DB.put('books', { id, type: ext, title, author, cover, fileName: opts.name || title, addedAt: Date.now(), progress: 0, location: null, source: opts.source || 'import' });
+    SyncService.schedulePush();
     return id;
   }
 
@@ -812,7 +814,9 @@
       if (!book) return;
       book.progress = info.percent;
       book.location = info.location;
+      book.updatedAt = Date.now();
       await DB.put('books', book);
+      SyncService.schedulePush();
     }, 800);
   }
 
@@ -917,6 +921,28 @@
   }
   function closeSettings() { $('#settings-panel').classList.remove('open'); $('#settings-mask').classList.add('hidden'); }
   function closeProxyHelp() { $('#proxy-help-panel').classList.remove('open'); $('#proxy-help-mask').classList.add('hidden'); }
+
+  /* 同步口令 UI */
+  function updateSyncUI() {
+    const token = SyncService.getToken() || '';
+    const inp = $('#sync-token-input');
+    const stat = $('#sync-status');
+    if (inp) inp.value = token;
+    if (stat) stat.textContent = token ? '已设置 · 书架/进度/生词自动跨设备同步' : '未设置 · 多台电脑填入相同口令即可自动同步';
+  }
+  function saveSyncToken() {
+    const inp = $('#sync-token-input');
+    const val = (inp && inp.value || '').trim();
+    if (!val) { toast('请输入同步口令'); return; }
+    SyncService.setToken(val);
+    updateSyncUI();
+    toast('同步口令已保存');
+    setTimeout(() => {
+      SyncService.syncOnce().then(n => {
+        if (n > 0) { renderShelf(); toast('同步完成，合并了 ' + n + ' 条数据'); }
+      });
+    }, 300);
+  }
 
   /* ---------- 兑换码激活 / 试用限次 ---------- */
   function openActivate() {
@@ -1367,6 +1393,12 @@
       else toast('当前环境不支持自动复制');
     });
 
+    /* 同步口令 */
+    on('#sync-token-save', 'click', saveSyncToken);
+    on('#sync-token-input', 'keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); saveSyncToken(); }
+    });
+
     /* 词典卡片 */
     on('#dict-speak', 'click', () => {
       if (!dictCurrent) return;
@@ -1384,8 +1416,9 @@
         addedAt: Date.now()
       });
       updateVocabCount();
-      toast('已加入生词本');
+      toast('已加���生词本');
       hideDict();
+      SyncService.schedulePush();
     });
 
     /* 句子弹层 */
@@ -1448,6 +1481,17 @@
     /* 授权检查：未激活提示试用剩余；试用耗尽弹激活模态（仅真实浏览器，测试环境不拦） */
     try { await initLicense(); } catch (e) { console.error('license init error', e); }
     renderShelf();
+    /* 跨设备同步：初始化 → 拉取合并 → 刷新书架（如有远端新书） */
+    try {
+      if (SyncService.init()) {
+        const merged = await SyncService.syncOnce();
+        if (merged > 0) {
+          renderShelf();
+          if (view() !== 'reader') renderVocab(); // 刷新生词本
+        }
+      }
+      updateSyncUI();
+    } catch (e) { console.error('sync init error', e); }
     /* 自动恢复上次打开的书（含阅读位置，已存于 books.location），刷新不再关闭 */
     try {
       const lastId = settings.lastBookId;
