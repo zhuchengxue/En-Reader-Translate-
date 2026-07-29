@@ -1,6 +1,6 @@
 /* 主控逻辑：书架 / 导入 / 阅读 / 生词本 / 设置 / 统计 */
 (() => {
-  const APP_VER = '2026-07-29.41'; // 前端版本号：诊断面板可见 + index.html 版本守卫比对
+  const APP_VER = '2026-07-29.42'; // 前端版本号：诊断面板可见 + index.html 版本守卫比对
   window.APP_VER = APP_VER; // 暴露给 index.html 内联守卫脚本做版本一致性校验
   const $ = s => document.querySelector(s);
   const $$ = s => Array.from(document.querySelectorAll(s));
@@ -212,42 +212,36 @@
     if (parent.normalize) parent.normalize();
   }
 
-  /* 在 doc 中找出所有匹配 word 的文本节点，包上 span.w-seen 高亮 */
+  /* 在 doc 中找出所有匹配 word 的文本节点，包上 span.w-seen 高亮。
+   极简方案：TreeWalker 找文本节点 → 直接改父级 innerHTML 替换。 */
   function highlightAllTextNodes(doc, word) {
     const spans = [];
-    if (!doc || !doc.body) { console.warn('[highlight] no doc/body'); return spans; }
-    const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT);
-    const re = new RegExp('\\b' + escRe(word) + '\\b', 'gi');
-    const targetNodes = [];
-    let tn, totalTNs = 0;
-    while ((tn = walker.nextNode())) {
-      totalTNs++;
-      const pn = tn.parentNode;
-      if (!pn || pn.nodeName === 'SCRIPT' || pn.nodeName === 'STYLE') continue;
-      let inMark = false, n = tn;
-      while (n) {
-        if (n.classList && (n.classList.contains('w-seen') || n.classList.contains('w-stay') || n.classList.contains('w-active'))) { inMark = true; break; }
-        n = n.parentNode;
-      }
-      if (!inMark && re.test(tn.nodeValue)) { targetNodes.push(tn); re.lastIndex = 0; }
-    }
-    if (typeof console !== 'undefined') console.log('[highlight] scan', word, 'totalTNs=' + totalTNs, 'targetNodes=' + targetNodes.length);
-    for (const node of targetNodes) {
-      const text = node.nodeValue;
-      const matcher = new RegExp('\\b' + escRe(word) + '\\b', 'gi');
-      const positions = [];
-      let m;
-      while ((m = matcher.exec(text)) !== null) positions.push({ s: m.index, e: m.index + word.length });
-      for (let i = positions.length - 1; i >= 0; i--) {
-        const { s, e } = positions[i];
-        const r = doc.createRange();
-        r.setStart(node, s);
-        r.setEnd(node, e);
-        const span = doc.createElement('span');
-        span.className = 'w-seen';
-        try { r.surroundContents(span); spans.push(span); }
-        catch (_) { /* 跨元素边界等，放弃该位置 */ }
-      }
+    if (!doc || !doc.body) return spans;
+    const re = new RegExp('\\b(' + escRe(word) + ')\\b', 'gi');
+    const walk = doc.createTreeWalker(
+      doc.body,
+      NodeFilter.SHOW_TEXT,
+      { acceptNode: n => {
+        const v = n.nodeValue, p = n.parentNode;
+        if (!v || p.tagName === 'SCRIPT' || p.tagName === 'STYLE') return NodeFilter.FILTER_REJECT;
+        if (re.test(v)) { re.lastIndex = 0; return NodeFilter.FILTER_ACCEPT; }
+        re.lastIndex = 0; return NodeFilter.FILTER_REJECT;
+      }}
+    );
+    const textNodes = [];
+    let tn;
+    while ((tn = walk.nextNode())) textNodes.push(tn);
+    const seenParents = new Set();
+    for (const node of textNodes) {
+      const parent = node.parentNode;
+      if (!parent || seenParents.has(parent)) continue;
+      if (parent.querySelector && parent.querySelector('.w-seen')) { seenParents.add(parent); continue; }
+      seenParents.add(parent);
+      const html = parent.innerHTML;
+      if (!re.test(html)) { re.lastIndex = 0; continue; }
+      re.lastIndex = 0;
+      parent.innerHTML = html.replace(re, '<span class="w-seen">$1</span>');
+      parent.querySelectorAll('.w-seen').forEach(s => spans.push(s));
     }
     return spans;
   }
