@@ -1,6 +1,6 @@
 /* 主控逻辑：书架 / 导入 / 阅读 / 生词本 / 设置 / 统计 */
 (() => {
-  const APP_VER = '2026-07-29.39'; // 前端版本号：诊断面板可见 + index.html 版本守卫比对
+  const APP_VER = '2026-07-29.40'; // 前端版本号：诊断面板可见 + index.html 版本守卫比对
   window.APP_VER = APP_VER; // 暴露给 index.html 内联守卫脚本做版本一致性校验
   const $ = s => document.querySelector(s);
   const $$ = s => Array.from(document.querySelectorAll(s));
@@ -215,11 +215,13 @@
   /* 在 doc 中找出所有匹配 word 的文本节点，包上 span.w-seen 高亮 */
   function highlightAllTextNodes(doc, word) {
     const spans = [];
+    if (!doc || !doc.body) { console.warn('[highlight] no doc/body'); return spans; }
     const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT);
     const re = new RegExp('\\b' + escRe(word) + '\\b', 'gi');
     const targetNodes = [];
-    let tn;
+    let tn, totalTNs = 0;
     while ((tn = walker.nextNode())) {
+      totalTNs++;
       const pn = tn.parentNode;
       if (!pn || pn.nodeName === 'SCRIPT' || pn.nodeName === 'STYLE') continue;
       let inMark = false, n = tn;
@@ -229,13 +231,13 @@
       }
       if (!inMark && re.test(tn.nodeValue)) { targetNodes.push(tn); re.lastIndex = 0; }
     }
+    if (typeof console !== 'undefined') console.log('[highlight] scan', word, 'totalTNs=' + totalTNs, 'targetNodes=' + targetNodes.length);
     for (const node of targetNodes) {
       const text = node.nodeValue;
       const matcher = new RegExp('\\b' + escRe(word) + '\\b', 'gi');
       const positions = [];
       let m;
       while ((m = matcher.exec(text)) !== null) positions.push({ s: m.index, e: m.index + word.length });
-      // 从后往前替换，避免偏移失效
       for (let i = positions.length - 1; i >= 0; i--) {
         const { s, e } = positions[i];
         const r = doc.createRange();
@@ -1536,9 +1538,16 @@
       SyncService.schedulePush();
       /* 整本高亮开关 ON 时，加入生词本的同时标黄该词在全文中所有出现 */
       if (d && settings.persistLookup) {
-        $$('.w-seen').forEach(s => { try { replaceSpanWithText(s); } catch (e) {} });
-        const spans = highlightAllTextNodes(d, w);
-        if (spans.length > 0) toast('已标黄 ' + spans.length + ' 处');
+        try {
+          $$('.w-seen').forEach(s => { try { replaceSpanWithText(s); } catch (e) {} });
+          toast('搜索中…');
+          const spans = highlightAllTextNodes(d, w);
+          if (spans.length > 0) toast('已标黄 ' + spans.length + ' 处');
+          else toast('已添加（无匹配）');
+        } catch (e) {
+          console.error('[highlight] 标黄失败', e);
+          toast('标黄失败，详情见控制台');
+        }
       }
     });
 
