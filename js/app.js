@@ -1,6 +1,6 @@
 /* 主控逻辑：书架 / 导入 / 阅读 / 生词本 / 设置 / 统计 */
 (() => {
-  const APP_VER = '2026-07-28.13'; // 前端版本号：诊断面板可见 + index.html 版本守卫比对
+  const APP_VER = '2026-07-28.14'; // 前端版本号：诊断面板可见 + index.html 版本守卫比对
   window.APP_VER = APP_VER; // 暴露给 index.html 内联守卫脚本做版本一致性校验
   const $ = s => document.querySelector(s);
   const $$ = s => Array.from(document.querySelectorAll(s));
@@ -569,10 +569,17 @@
     for (const bm of bms) {
       const item = document.createElement('div');
       item.className = 'bm-item';
+      const title = (bm.title || '').trim();
+      const text = (bm.text || '').trim();
+      const name = (bm.name || '').trim();
+      const label = (bm.label || '').trim();
+      const snippet = text.length > 160 ? (text.slice(0, 160) + '…') : text;
       item.innerHTML =
         '<button class="bm-jump" title="跳转到该书签">' +
-          '<span class="bm-name">' + esc(bm.name) + '</span>' +
-          (bm.label ? '<span class="bm-label">' + esc(bm.label) + '</span>' : '') +
+          (name ? '<span class="bm-name">' + esc(name) + '</span>' : '') +
+          (title ? '<span class="bm-title">' + esc(title) + '</span>' : '') +
+          (snippet ? '<span class="bm-text">' + esc(snippet) + '</span>' : '') +
+          (label && !title ? '<span class="bm-label">' + esc(label) + '</span>' : '') +
         '</button>' +
         '<button class="bm-del" title="删除">✕</button>';
       item.querySelector('.bm-jump').addEventListener('click', () => jumpToBookmark(bm));
@@ -592,11 +599,22 @@
     let name = (input && input.value || '').trim();
     if (!name) name = '位置 · ' + (($('#page-label').textContent || '').trim() || '未命名');
     name = name.slice(0, 60);
+    /* 书签保留「标题 + 文字」：标题=当前章节，文字=当前屏首段/本页（调用方 await，取不到也不阻断） */
+    let title = '', text = '';
+    try {
+      if (reader.getBookmarkContext) {
+        const ctx = await reader.getBookmarkContext();
+        title = (ctx && ctx.title || '').trim();
+        text = (ctx && ctx.text || '').trim();
+      }
+    } catch (e) {}
     const bm = {
       id: currentBookId + ':' + Date.now(),
       bookId: currentBookId,
       name,
       label: ($('#page-label').textContent || '').trim(),
+      title,
+      text,
       location: loc,
       addedAt: Date.now()
     };

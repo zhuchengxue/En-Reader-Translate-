@@ -237,6 +237,14 @@ class PdfReader {
   /* ---------- 书签 / 朗读 ---------- */
   getLocation() { return { page: this.page }; }
 
+  /* 书签要保留「标题 + 文字」：标题取页码，文字取本页文本（异步提取，调用方 await） */
+  async getBookmarkContext() {
+    const title = '第 ' + this.page + ' 页';
+    let text = '';
+    try { text = (this.getCurrentText && await this.getCurrentText()) || ''; } catch (e) {}
+    return { title, text: (text || '').slice(0, 500) };
+  }
+
   /* 懒提取单页文本（不依赖文本层 DOM 是否渲染，连续朗读也能用） */
   async _pageText(page) {
     if (this._pageTexts && this._pageTexts[page - 1] != null) return this._pageTexts[page - 1];

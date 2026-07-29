@@ -251,6 +251,14 @@ async function clearSentPopup(page) {
   await page.waitForTimeout(400);
   const bmAfter = await page.evaluate(() => document.querySelectorAll('#bookmark-list .bm-item').length);
   check('书签添加成功', bmAfter === bmBefore + 1, 'before=' + bmBefore + ' after=' + bmAfter);
+  const bmCtx = await page.evaluate(() => {
+    const item = document.querySelector('#bookmark-list .bm-item');
+    const t = item && item.querySelector('.bm-title');
+    const x = item && item.querySelector('.bm-text');
+    return { hasTitle: !!(t && t.textContent.trim()), hasText: !!(x && x.textContent.trim()) };
+  });
+  check('书签保留标题', bmCtx.hasTitle, JSON.stringify(bmCtx));
+  check('书签保留文字', bmCtx.hasText, JSON.stringify(bmCtx));
   await page.evaluate(() => { const j = document.querySelector('#bookmark-list .bm-jump'); j && j.click(); });
   await page.waitForTimeout(300);
   const bmClosed = await page.evaluate(() => !document.querySelector('#bookmark-drawer').classList.contains('open'));

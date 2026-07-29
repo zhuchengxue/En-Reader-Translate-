@@ -11,6 +11,7 @@ class EpubReader {
     this.handlers = opts.handlers || {};
     this.onProgress = null;
     this.currentCfi = null;
+    this.currentTitle = '';
     this.locReady = false;
   }
 
@@ -108,6 +109,8 @@ class EpubReader {
 
     this.rendition.on('relocated', (loc) => {
       this.currentCfi = loc.start.cfi;
+      const dt = loc.start && loc.start.displayed && loc.start.displayed.title;
+      if (dt) this.currentTitle = dt; // 记录当前章节标题，供书签保留「标题」
       this._loc = loc;
       this._emitProgress();
       /* 翻页动画（滑动 / 淡入淡出），none 时不加 */
@@ -142,6 +145,13 @@ class EpubReader {
 
   /* ---------- 书签 / 朗读 ---------- */
   getLocation() { return { cfi: this.currentCfi }; }
+
+  /* 书签要保留「标题 + 文字」：标题取当前章节名（relocated 时记录），文字取当前屏首块 */
+  getBookmarkContext() {
+    const title = this.currentTitle || '';
+    const text = (this.getCurrentText && this.getCurrentText()) || '';
+    return { title, text: text.slice(0, 500) };
+  }
 
   /* 当前可见页的文本（分页模式下，仅取落在 iframe 视口内的元素）。
    * 避免把整章文本一次性读出导致连续朗读无法翻页：逐页读、逐页翻。 */

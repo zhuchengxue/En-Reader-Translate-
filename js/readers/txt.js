@@ -150,6 +150,14 @@ class TxtReader {
   /* ---------- 书签 / 朗读 ---------- */
   getLocation() { return { section: this.section, page: this.page }; }
 
+  /* 书签要保留「标题 + 文字」：标题取当前章节名，文字取当前屏首段 */
+  getBookmarkContext() {
+    const toc = this.toc && this.toc[this.section];
+    const title = (toc && toc.label) || ('第 ' + (this.section + 1) + ' 部分');
+    const text = (this.getCurrentText && this.getCurrentText()) || '';
+    return { title, text: text.slice(0, 500) };
+  }
+
   /* 朗读跟随文字：把当前屏幕可见段落切成句子片段，返回 [{text, nodes}] */
   getPageSegments() {
     const segs = [];
