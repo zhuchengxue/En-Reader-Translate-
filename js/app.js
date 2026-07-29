@@ -1,6 +1,6 @@
 /* 主控逻辑：书架 / 导入 / 阅读 / 生词本 / 设置 / 统计 */
 (() => {
-  const APP_VER = '2026-07-29.42'; // 前端版本号：诊断面板可见 + index.html 版本守卫比对
+  const APP_VER = '2026-07-29.43'; // 前端版本号：诊断面板可见 + index.html 版本守卫比对
   window.APP_VER = APP_VER; // 暴露给 index.html 内联守卫脚本做版本一致性校验
   const $ = s => document.querySelector(s);
   const $$ = s => Array.from(document.querySelectorAll(s));
@@ -216,14 +216,16 @@
    极简方案：TreeWalker 找文本节点 → 直接改父级 innerHTML 替换。 */
   function highlightAllTextNodes(doc, word) {
     const spans = [];
-    if (!doc || !doc.body) return spans;
+    if (!doc || !doc.body) { console.warn('[hl] no doc/body'); return spans; }
     const re = new RegExp('\\b(' + escRe(word) + ')\\b', 'gi');
+    console.log('[hl] word=' + JSON.stringify(word) + ' re=' + re + ' bodyHTML.len=' + doc.body.innerHTML.length);
     const walk = doc.createTreeWalker(
       doc.body,
       NodeFilter.SHOW_TEXT,
       { acceptNode: n => {
         const v = n.nodeValue, p = n.parentNode;
-        if (!v || p.tagName === 'SCRIPT' || p.tagName === 'STYLE') return NodeFilter.FILTER_REJECT;
+        if (!v) return NodeFilter.FILTER_REJECT;
+        if (p && (p.tagName === 'SCRIPT' || p.tagName === 'STYLE')) return NodeFilter.FILTER_REJECT;
         if (re.test(v)) { re.lastIndex = 0; return NodeFilter.FILTER_ACCEPT; }
         re.lastIndex = 0; return NodeFilter.FILTER_REJECT;
       }}
@@ -231,6 +233,7 @@
     const textNodes = [];
     let tn;
     while ((tn = walk.nextNode())) textNodes.push(tn);
+    console.log('[hl] matched textNodes=' + textNodes.length);
     const seenParents = new Set();
     for (const node of textNodes) {
       const parent = node.parentNode;
@@ -243,6 +246,7 @@
       parent.innerHTML = html.replace(re, '<span class="w-seen">$1</span>');
       parent.querySelectorAll('.w-seen').forEach(s => spans.push(s));
     }
+    console.log('[hl] wrapped spans=' + spans.length);
     return spans;
   }
   /* 正则元字符转义 */
