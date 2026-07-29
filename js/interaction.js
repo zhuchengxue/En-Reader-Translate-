@@ -195,26 +195,29 @@ const Interaction = (() => {
     try { return null; } catch (e) { return null; }
   }
 
-  /* 点击单词的瞬时高亮：只临时包住这【一个】词，650ms 后还原。
-   * 取代原先给每个词都加常驻 span 的方案——常驻节点才是卡顿根源。 */
-  function flashWord(range, doc) {
-    if (!range || !range.startContainer || range.startContainer.nodeType !== 3) return;
+  /* 点击单词的瞬时高亮：只临时包住这一个词，650ms 后还原。
+   * 但如果外部传入 duration === 'stay'，则不自动还原，由调用方负责清理（用于「查词时
+   * 持续高亮」）。返回 span 引用，方便调用方追踪 / 移除。 */
+  function flashWord(range, doc, duration) {
+    if (!range || !range.startContainer || range.startContainer.nodeType !== 3) return null;
     const span = doc.createElement('span');
     span.className = 'w-active';
     try {
       const frag = range.extractContents();
       span.appendChild(frag);
       range.insertNode(span);
+      if (duration === 'stay') return span;
+      const ms = typeof duration === 'number' ? duration : 650;
       setTimeout(() => {
         try {
-          const parent = span.parentNode;
-          if (parent) {
-            parent.replaceChild(doc.createTextNode(span.textContent), span);
-            if (parent.normalize) parent.normalize();
-          }
+          if (!span.parentNode) return;
+          while (span.firstChild) span.parentNode.insertBefore(span.firstChild, span);
+          span.parentNode.removeChild(span);
+          if (span.parentNode.normalize) span.parentNode.normalize();
         } catch (e) {}
-      }, 650);
-    } catch (e) {}
+      }, ms);
+      return span;
+    } catch (e) { return null; }
   }
 
   /*

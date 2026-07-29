@@ -1,6 +1,6 @@
 /* 主控逻辑：书架 / 导入 / 阅读 / 生词本 / 设置 / 统计 */
 (() => {
-  const APP_VER = '2026-07-29.33'; // 前端版本号：诊断面板可见 + index.html 版本守卫比对
+  const APP_VER = '2026-07-29.34'; // 前端版本号：诊断面板可见 + index.html 版本守卫比对
   window.APP_VER = APP_VER; // 暴露给 index.html 内联守卫脚本做版本一致性校验
   const $ = s => document.querySelector(s);
   const $$ = s => Array.from(document.querySelectorAll(s));
@@ -140,10 +140,15 @@
     enabled: () => view() === 'reader',
     onWord(word, x, y, info) {
       if (view() !== 'reader') return;
-      Interaction.flashWord(info.range, info.doc);
+      // 一次 flashWord 即可：传 'stay'，让 showDict 接管 span（持续高亮直到 hideDict）
+      const flashSpan = Interaction.flashWord(info.range, info.doc, 'stay');
       const mode = settings.clickMode;
-      if (mode === 'sound') { TTS.speak(word); return; }
-      showDict(word, x, y, info.range, info.doc);
+      if (mode === 'sound') {
+        if (flashSpan) flashSpan.classList.add('w-sound-only');
+        setTimeout(() => { try { if (flashSpan && flashSpan.parentNode) { while (flashSpan.firstChild) flashSpan.parentNode.insertBefore(flashSpan.firstChild, flashSpan); flashSpan.parentNode.removeChild(flashSpan); if (flashSpan.parentNode.normalize) flashSpan.parentNode.normalize(); } } catch (e) {} }, 650);
+        TTS.speak(word); return;
+      }
+      showDict(word, x, y, info.range, info.doc, flashSpan);
       if (mode === 'both') TTS.speak(word);
     },
     onWordStart(word, x, y, info) {
@@ -249,7 +254,7 @@
   /* HTML 实体转义 */
   function escHtml(s) { return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 
-  async function showDict(word, x, y, range, doc) {
+  async function showDict(word, x, y, range, doc, flashSpan) {
     const popup = $('#dict-popup');
 
     /* 清理上一次查词留下的高亮 */
@@ -266,15 +271,16 @@
     lastDictPos = { x, y };
     placeNear(popup, x, y);   // 仅在显示的一刻定位一次，之后内容增量加载不再重排
 
-    /* 持久高亮选中的单词（弹窗打开期间一直高亮，关闭时由 hideDict 移除） */
-    if (range && doc) {
+    /* 复用 onWord 已创建的 flashSpan，加 w-stay 表示持续高亮。
+       若 onWord 没传（如直接调用），则用 range 重新创建。 */
+    let span = flashSpan;
+    if (!span && range && doc) {
+      span = Interaction.flashWord(range, doc, 'stay');
+    }
+    if (span) {
       try {
-        // 若之前 flashWord 留下的 span 还在，复用它延长停留时间；否则新包一个
-        const span = doc.createElement('span');
-        span.className = 'w-active w-stay';
-        const frag = range.extractContents();
-        span.appendChild(frag);
-        range.insertNode(span);
+        span.classList.remove('w-sound-only');
+        span.classList.add('w-stay');
         dictCurrent.span = span;
       } catch (e) {}
     }
