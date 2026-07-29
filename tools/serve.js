@@ -83,10 +83,67 @@ async function handleGutenberg(req, res) {
 
 /* 本地同步 mock：存 .workbuddy/sync-dev.json（仅开发用，不进入 git） */
 const SYNC_FILE = path.join(ROOT, '.workbuddy', 'sync-dev.json');
+const SYNC_BOOKS_DIR = path.join(ROOT, '.workbuddy', 'sync-books');
 async function handleSync(req, res) {
-  const cors = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'GET, PUT, OPTIONS', 'Content-Type': 'application/json' };
-  if (req.method === 'OPTIONS') { res.writeHead(204, cors); res.end(); return; }
+  const corsH = method => ({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': method || 'GET, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type'
+  });
   const url = new URL(req.url, 'http://localhost');
+  const parts = url.pathname.replace(/^\/+|\/+$/g, '').split('/');
+  // /api/sync/book/:id → parts = ['api','sync','book','<id>']
+  const isBook = parts[2] === 'book' && parts[3];
+
+  if (req.method === 'OPTIONS') {
+    const m = isBook ? 'GET, PUT, DELETE, OPTIONS' : 'GET, PUT, OPTIONS';
+    res.writeHead(204, { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': m, 'Access-Control-Allow-Headers': 'Content-Type', 'Access-Control-Max-Age': '86400' });
+    res.end(); return;
+  }
+
+  if (isBook) {
+    const bookId = parts[3];
+    // GET /api/sync/book/:id?token=xxx
+    if (req.method === 'GET') {
+      const token = (url.searchParams.get('token') || '').trim().slice(0, 64);
+      if (!token) { res.writeHead(400); res.end('Missing token'); return; }
+      const filePath = path.join(SYNC_BOOKS_DIR, token, bookId);
+      try {
+        const data = fs.readFileSync(filePath);
+        res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Length': data.length });
+        res.end(data);
+      } catch (e) { res.writeHead(404); res.end('Not found'); }
+      return;
+    }
+    // PUT /api/sync/book/:id  body: {token, data}
+    if (req.method === 'PUT') {
+      const body = JSON.parse(await readBody(req));
+      const token = (body.token || '').toString().trim().slice(0, 64);
+      if (!token) { res.writeHead(400); res.end('Missing token'); return; }
+      if (!body.data) { res.writeHead(400); res.end('Missing data'); return; }
+      const filePath = path.join(SYNC_BOOKS_DIR, token, bookId);
+      fs.mkdirSync(path.dirname(filePath), { recursive: true });
+      fs.writeFileSync(filePath, Buffer.from(body.data, 'base64'));
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: true }));
+      return;
+    }
+    // DELETE /api/sync/book/:id?token=xxx
+    if (req.method === 'DELETE') {
+      const token = (url.searchParams.get('token') || '').trim().slice(0, 64);
+      if (!token) { res.writeHead(400); res.end('Missing token'); return; }
+      const filePath = path.join(SYNC_BOOKS_DIR, token, bookId);
+      try { fs.unlinkSync(filePath); } catch (e) {}
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: true }));
+      return;
+    }
+    res.writeHead(405); res.end('Method not allowed');
+    return;
+  }
+
+  // 元数据同步
+  const cors = { ...corsH('GET, PUT, OPTIONS'), 'Content-Type': 'application/json' };
   let token = (url.searchParams.get('token') || '').trim().slice(0, 64);
   let store = {};
   try { store = JSON.parse(fs.readFileSync(SYNC_FILE, 'utf8')); } catch (e) {}

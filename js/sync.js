@@ -1,15 +1,15 @@
-/* 跨设备同步：读取/更新云端的书架元数据 + 生词本
+/* 跨设备同步：书架元数据 + 生词本 (KV) + 书文件 (R2)
  * 依赖 Cloudflare Pages Function: /api/sync
- * 本地开发（无此端点）时静默跳过，不影响本地使用。
+ * 本地开发（无此端点）��静默跳过，不影响本地使用。
  */
 
 const SyncService = (() => {
   let syncToken = null;
   let lastSyncTs = 0;
   let pushTimer = null;
-  const PUSH_DELAY = 2000; // 改动后延迟 2 秒推送（去抖）
+  const PUSH_DELAY = 2000;
 
-  /* 初始化：从 settings 读取 token，返回是否已配置同步 */
+  /* 初始化 */
   function init() {
     syncToken = (Settings.get().syncToken || '').trim();
     lastSyncTs = Settings.get()._syncTs || 0;
@@ -19,19 +19,16 @@ const SyncService = (() => {
   function setToken(t) {
     syncToken = (t || '').trim().slice(0, 64);
     Settings.set({ syncToken });
-    lastSyncTs = 0; // 更换 token 后下次拉取全量
+    lastSyncTs = 0;
     Settings.set({ _syncTs: 0 });
     return !!syncToken;
   }
 
   function getToken() { return syncToken; }
+  function available() { return !!(syncToken && navigator.onLine !== false); }
 
-  /* 判断是否支持同步（网络 + token 都存在） */
-  function available() {
-    return !!(syncToken && navigator.onLine !== false);
-  }
+  /* ───── 元数据导出/导入 ───── */
 
-  /* 从 IndexedDB 导出可同步的数据（不含文件二进制） */
   async function exportData() {
     const books = await DB.getAll('books');
     const vocab = await DB.getAll('vocab');
@@ -50,45 +47,35 @@ const SyncService = (() => {
     };
   }
 
-  /* 把同步数据写入 IndexedDB（合并：按 id/word 保留 updatedAt 较新的） */
   async function importData(remote) {
-    if (!remote || !remote.books || !remote.vocab) return;
+    if (!remote || !remote.books || !remote.vocab) return 0;
     const localBooks = await DB.getAll('books');
     const localVocab = await DB.getAll('vocab');
 
-    const bookMap = {};
-    for (const b of localBooks) bookMap[b.id] = b;
-    const vocabMap = {};
-    for (const v of localVocab) vocabMap[v.word] = v;
+    const bookMap = {}; for (const b of localBooks) bookMap[b.id] = b;
+    const vocabMap = {}; for (const v of localVocab) vocabMap[v.word] = v;
 
     let merged = 0;
-
-    // 合并书架：本地已有 → 仅更新 progress/location（保留本地文件）；本地没有 → 仅记元数据
     for (const rb of remote.books) {
       const lb = bookMap[rb.id];
       if (lb) {
-        // 两边都有：保留 updatedAt 更新的 progress/location
         if (rb.updatedAt > (lb.updatedAt || lb.addedAt || 0)) {
-          lb.progress = rb.progress;
-          lb.location = rb.location;
+          lb.progress = rb.progress; lb.location = rb.location;
           lb.updatedAt = rb.updatedAt;
-          await DB.put('books', lb);
-          merged++;
+          await DB.put('books', lb); merged++;
         }
       } else {
-        // 本地没有：仅存元数据（文件需用户手动导入）
         await DB.put('books', {
           id: rb.id, title: rb.title, author: rb.author, type: rb.type,
           addedAt: rb.addedAt, updatedAt: rb.updatedAt,
           progress: rb.progress, location: rb.location,
           coverColor: rb.coverColor || '', coverText: rb.coverText || '',
-          _remoteOnly: true // 标记为「仅有元数据，无文件」，UI 显示「下载」
+          _remoteOnly: true
         });
         merged++;
       }
     }
 
-    // 合并生词本
     for (const rv of remote.vocab) {
       const lv = vocabMap[rv.word];
       if (lv) {
@@ -96,8 +83,7 @@ const SyncService = (() => {
           await DB.put('vocab', Object.assign({}, lv, {
             phonetic: rv.phonetic, zh: rv.zh, en: rv.en,
             book: rv.book, updatedAt: rv.updatedAt, addedAt: rv.addedAt
-          }));
-          merged++;
+          })); merged++;
         }
       } else {
         await DB.put('vocab', {
@@ -107,11 +93,11 @@ const SyncService = (() => {
         merged++;
       }
     }
-
     return merged;
   }
 
-  /* 全量拉取：GET /api/sync?token=xxx */
+  /* ───── 网络请求 ───── */
+
   async function pull() {
     if (!available()) return null;
     try {
@@ -124,7 +110,6 @@ const SyncService = (() => {
     } catch (e) { return null; }
   }
 
-  /* 全量推送：PUT /api/sync */
   async function push() {
     if (!available()) return;
     try {
@@ -134,31 +119,94 @@ const SyncService = (() => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ token: syncToken, data })
       });
-      if (resp.ok) {
-        lastSyncTs = Date.now();
-        Settings.set({ _syncTs: lastSyncTs });
-      }
-    } catch (e) { /* 推送失败静默，下次自动重试 */ }
+      if (resp.ok) { lastSyncTs = Date.now(); Settings.set({ _syncTs: lastSyncTs }); }
+    } catch (e) {}
   }
 
-  /* 去抖推送：书架/进度/生词变动后调用 */
   function schedulePush() {
     if (!available()) return;
     clearTimeout(pushTimer);
     pushTimer = setTimeout(push, PUSH_DELAY);
   }
 
-  /* 初始化同步：拉取 → 合并 → 推送（合并后的全量写回云） */
+  /* ───── 书文件同步 (R2) ───── */
+
+  /* 上传一本书到云端 */
+  async function uploadBook(bookId) {
+    if (!available()) return false;
+    try {
+      const file = await DB.get('files', bookId);
+      if (!file || !file.data) return false;
+      const bytes = file.data instanceof ArrayBuffer ? new Uint8Array(file.data) : file.data;
+      let binary = '';
+      for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+      const resp = await fetch('/api/sync/book/' + encodeURIComponent(bookId), {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: syncToken, data: btoa(binary) })
+      });
+      return resp.ok;
+    } catch (e) { return false; }
+  }
+
+  /* 从云端下载一本书 */
+  async function downloadBook(bookId) {
+    if (!available()) return null;
+    try {
+      const resp = await fetch('/api/sync/book/' + encodeURIComponent(bookId) + '?token=' + encodeURIComponent(syncToken));
+      if (!resp.ok) return null;
+      const buf = await resp.arrayBuffer();
+      return buf;
+    } catch (e) { return null; }
+  }
+
+  /* 从云端删除一本书 */
+  async function deleteBookFile(bookId) {
+    if (!available()) return false;
+    try {
+      const resp = await fetch('/api/sync/book/' + encodeURIComponent(bookId) + '?token=' + encodeURIComponent(syncToken), { method: 'DELETE' });
+      return resp.ok;
+    } catch (e) { return false; }
+  }
+
+  /* 下载所有远端仅有元数据的书（书架同步后自动调用） */
+  async function downloadMissingBooks(onProgress) {
+    if (!available()) return 0;
+    const books = (await DB.getAll('books')).filter(b => b._remoteOnly);
+    if (!books.length) return 0;
+    let count = 0;
+    for (const b of books) {
+      try {
+        const buf = await downloadBook(b.id);
+        if (!buf) continue;
+        await DB.put('files', { id: b.id, data: buf });
+        b._remoteOnly = false;
+        b.addedAt = b.addedAt || Date.now();
+        await DB.put('books', b);
+        count++;
+        if (onProgress) onProgress(count, books.length);
+      } catch (e) {}
+    }
+    return count;
+  }
+
+  /* 初始化同步：拉取元数据 → 合并 → 下载缺失的书 → 推送 */
   async function syncOnce() {
     if (!available()) return 0;
     try {
       const remote = await pull();
       if (!remote) return 0;
       const merged = await importData(remote);
-      await push(); // 把合并后的本地数据推上去
-      return merged;
+      await push();
+      // 自动下载远端只有元数据的书
+      const downloaded = await downloadMissingBooks();
+      return merged + downloaded;
     } catch (e) { return 0; }
   }
 
-  return { init, setToken, getToken, available, syncOnce, schedulePush, exportData, pull, push };
+  return {
+    init, setToken, getToken, available, syncOnce, schedulePush,
+    uploadBook, downloadBook, deleteBookFile, downloadMissingBooks,
+    exportData, pull, push
+  };
 })();

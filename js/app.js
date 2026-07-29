@@ -1,6 +1,6 @@
 /* 主控逻辑：书架 / 导入 / 阅读 / 生词本 / 设置 / 统计 */
 (() => {
-  const APP_VER = '2026-07-28.20'; // 前端版本号：诊断面板可见 + index.html 版本守卫比对
+  const APP_VER = '2026-07-29.21'; // 前端版本号：诊断面板可见 + index.html 版本守卫比对
   window.APP_VER = APP_VER; // 暴露给 index.html 内联守卫脚本做版本一致性校验
   const $ = s => document.querySelector(s);
   const $$ = s => Array.from(document.querySelectorAll(s));
@@ -374,6 +374,7 @@
         await DB.del('books', b.id);
         await DB.del('files', b.id);
         SyncService.schedulePush();
+        SyncService.deleteBookFile(b.id).catch(() => {});
         renderShelf();
       });
       grid.appendChild(card);
@@ -452,6 +453,8 @@
     await DB.put('files', { id, data: buf });
     await DB.put('books', { id, type: ext, title, author, cover, fileName: opts.name || title, addedAt: Date.now(), progress: 0, location: null, source: opts.source || 'import' });
     SyncService.schedulePush();
+    // 书文件也同步到云端，其他设备自动下载
+    SyncService.uploadBook(id).catch(() => {});
     return id;
   }
 
@@ -1487,8 +1490,14 @@
         const merged = await SyncService.syncOnce();
         if (merged > 0) {
           renderShelf();
-          if (view() !== 'reader') renderVocab(); // 刷新生词本
+          if (view() !== 'reader') renderVocab();
+          toast('同步完成，合并了 ' + merged + ' 项更新');
         }
+        // 下载远端新书的文件（如有）
+        const dl = await SyncService.downloadMissingBooks((n, total) => {
+          toast('同步书文件 ' + n + '/' + total + '…');
+        });
+        if (dl > 0) { renderShelf(); toast('已下载 ' + dl + ' 本新书'); }
       }
       updateSyncUI();
     } catch (e) { console.error('sync init error', e); }
