@@ -1,6 +1,6 @@
 /* 主控逻辑：书架 / 导入 / 阅读 / 生词本 / 设置 / 统计 */
 (() => {
-  const APP_VER = '2026-07-29.38'; // 前端版本号：诊断面板可见 + index.html 版本守卫比对
+  const APP_VER = '2026-07-29.39'; // 前端版本号：诊断面板可见 + index.html 版本守卫比对
   window.APP_VER = APP_VER; // 暴露给 index.html 内联守卫脚本做版本一致性校验
   const $ = s => document.querySelector(s);
   const $$ = s => Array.from(document.querySelectorAll(s));
@@ -287,13 +287,6 @@
 
     /* 查新词前清理旧的 .w-seen 高亮（确保每次只显示当前词的标黄） */
     $$('.w-seen').forEach(s => { try { replaceSpanWithText(s); } catch (e) {} });
-
-    /* 「整本高亮」开关开启时：每次点词都标黄 */
-    if (settings.persistLookup && doc) {
-      const list = highlightAllTextNodes(doc, word);
-      dictCurrent.seenSpans = list;
-      dictCurrent.seenWord = word;
-    }
 
     /* 增量渲染：翻译与词典释义并行获取，谁先回来先显示谁，互不阻塞 */
     const render = () => {
@@ -1541,14 +1534,11 @@
       updateVocabCount();
       hideDict();
       SyncService.schedulePush();
-      /* 加入生词本后，整篇标黄该词 */
-      if (d) {
+      /* 整本高亮开关 ON 时，加入生词本的同时标黄该词在全文中所有出现 */
+      if (d && settings.persistLookup) {
         $$('.w-seen').forEach(s => { try { replaceSpanWithText(s); } catch (e) {} });
         const spans = highlightAllTextNodes(d, w);
         if (spans.length > 0) toast('已标黄 ' + spans.length + ' 处');
-        else toast('已添加（全文无其他匹配）');
-      } else {
-        toast('已添加（无文档上下文）');
       }
     });
 
