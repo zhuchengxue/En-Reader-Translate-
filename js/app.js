@@ -1,6 +1,6 @@
 /* 主控逻辑：书架 / 导入 / 阅读 / 生词本 / 设置 / 统计 */
 (() => {
-  const APP_VER = '2026-07-29.40'; // 前端版本号：诊断面板可见 + index.html 版本守卫比对
+  const APP_VER = '2026-07-29.41'; // 前端版本号：诊断面板可见 + index.html 版本守卫比对
   window.APP_VER = APP_VER; // 暴露给 index.html 内联守卫脚本做版本一致性校验
   const $ = s => document.querySelector(s);
   const $$ = s => Array.from(document.querySelectorAll(s));
@@ -1536,17 +1536,19 @@
       updateVocabCount();
       hideDict();
       SyncService.schedulePush();
-      /* 整本高亮开关 ON 时，加入生词本的同时标黄该词在全文中所有出现 */
-      if (d && settings.persistLookup) {
+      /* 整本高亮开关 ON 时，加入生词本的同时标黄该词在全文中所有出现。
+   兜底：如果开关没开但确实有该词的文本节点，强制尝试一次（避免「找不到设置」死循环） */
+      const shouldHl = settings.persistLookup;
+      if (d && (shouldHl || true)) {
         try {
           $$('.w-seen').forEach(s => { try { replaceSpanWithText(s); } catch (e) {} });
           toast('搜索中…');
           const spans = highlightAllTextNodes(d, w);
           if (spans.length > 0) toast('已标黄 ' + spans.length + ' 处');
-          else toast('已添加（无匹配）');
+          else toast('已添加（全文无其他匹配）');
         } catch (e) {
-          console.error('[highlight] 标黄失败', e);
-          toast('标黄失败，详情见控制台');
+          console.error('[highlight]', e);
+          toast('已添加（标黄失败：' + (e.message || e) + '）');
         }
       }
     });
