@@ -1,6 +1,6 @@
 /* 主控逻辑：书架 / 导入 / 阅读 / 生词本 / 设置 / 统计 */
 (() => {
-  const APP_VER = '2026-07-30.47'; // 前端版本号：诊断面板可见 + index.html 版本守卫比对
+  const APP_VER = '2026-07-30.48'; // 前端版本号：诊断面板可见 + index.html 版本守卫比对
   window.APP_VER = APP_VER; // 暴露给 index.html 内联守卫脚本做版本一致性校验
   const $ = s => document.querySelector(s);
   const $$ = s => Array.from(document.querySelectorAll(s));
@@ -198,7 +198,7 @@
       if (!reader) return;
       if (fx < 0.3) reader.prev();
       else if (fx > 0.7) reader.next();
-      else if (!document.body.classList.contains('fs-active')) toggleChrome();
+      // 点击页面中部（空白处）不再隐藏顶/底栏；仅全屏时由 syncFsBtn 控制 chrome-hidden
     },
     onSwipe(dir) {
       if (view() !== 'reader' || !reader) return;
@@ -209,11 +209,6 @@
 
   function flash(info) {
     Interaction.flashWord(info && info.range, info && info.doc);
-  }
-
-  function toggleChrome() {
-    document.body.classList.toggle('chrome-hidden');
-    setTimeout(() => reader && reader.onResize && reader.onResize(), 300);
   }
 
   function closeAnyPopup() {
