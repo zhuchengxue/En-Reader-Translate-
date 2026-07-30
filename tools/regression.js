@@ -173,6 +173,22 @@ async function clearSentPopup(page) {
   });
 }
 
+/* 通过真实 UI 按钮切换「单击单词」模式。注意：必须用按钮点击，因为 app.js 的
+ * settings 变量只在按钮回调里被重新赋值（settings = Settings.set(...)）；
+ * 直接调 Settings.set(...) 只写 localStorage，不会更新 settings.clickMode，
+ * 导致 onWord 仍以旧模式运行（这是早期全屏回归用例的隐性 bug）。 */
+async function setClickMode(page, mode) {
+  await page.evaluate(() => { const b = document.querySelector('#btn-settings'); if (b) b.click(); });
+  await page.waitForTimeout(250);
+  await page.evaluate((m) => {
+    const b = [...document.querySelectorAll('#click-mode-seg button')].find(x => x.dataset.m === m);
+    if (b) b.click();
+  }, mode);
+  await page.waitForTimeout(250);
+  await page.evaluate(() => { const b = document.querySelector('#settings-close'); if (b) b.click(); });
+  await page.waitForTimeout(250);
+}
+
 (async () => {
   const srv = await serve(ROOT, PORT);
   const proxy = await serveProxy(PROXY);
@@ -528,6 +544,130 @@ async function clearSentPopup(page) {
   });
   check('设备 B 能打开同步下来的书', bOpenOk.found && bOpenOk.view === 'reader' && bOpenOk.hasReader && !/文件数据|文件尚未同步|重新导入/.test(bOpenOk.toast), JSON.stringify(bOpenOk));
   await bctx.close();
+
+  /* ─── 全屏沉浸式：句子翻译不应让浏览器退出全屏 ───
+   * 根因：EPUB 内容在 iframe 内，在 iframe 文档里建真实文本选区会让 Chrome
+   * 退出原生全屏（文档切换），导致顶/底栏重新出现。修复后全屏下改用 flash span
+   * 高亮整句、不再建真实选区。这里用 window.__FS_ACTIVE 模拟全屏态来验证修复路径。
+   * 先在主文档(TXT)验证修复逻辑，再针对 EPUB(iframe) 验证「不在 iframe 建真实选区」。 */
+  // 确保主页面处于阅读视图（同步测试后可能停在书架）
+  await page.evaluate(() => { const c = [...document.querySelectorAll('#shelf-grid .book-card')].find(x => x.querySelector('.book-name') && /Gatsby/i.test(x.querySelector('.book-name').textContent)); c && c.click(); });
+  await page.waitForSelector('#reader-container .txt-content, #reader-container .txt-viewport', { timeout: 10000 }).catch(() => {});
+  await page.waitForTimeout(800);
+  // 设为「单击单词 → 翻译句子」并模拟全屏态
+  await setClickMode(page, 'sentence');
+  await page.evaluate(() => {
+    window.__FS_ACTIVE = true;
+    document.body.classList.add('fs-active', 'chrome-hidden');
+    // 清掉上一轮可能残留的真实选区 / flash 高亮，避免误判
+    const s = window.getSelection(); if (s) s.removeAllRanges();
+    if (typeof Interaction !== 'undefined') Interaction.clearSentence();
+    document.querySelectorAll('#reader-container .w-active').forEach(e => e.remove());
+  });
+  await clearSentPopup(page);
+  // 取一个安全的正文单词点：避开顶部书标题（chrome-hidden 下正文从 y=0 起，标题首词会被误取），
+  // 取视口中下部、非标题的单词，确保点击命中的是正文而非书标题。
+  const fsWord = await page.evaluate(() => {
+    const root = document.querySelector('#reader-container');
+    if (!root) return null;
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null);
+    const title = (document.querySelector('.reader-title') || {}).textContent || '';
+    let n, best = null;
+    while ((n = walker.nextNode())) {
+      if (!n.parentElement) continue;
+      if (n.parentElement.closest('.reader-title')) continue;
+      const m = n.nodeValue.match(/[A-Za-z]{3,}/);
+      if (!m) continue;
+      const range = document.createRange();
+      range.setStart(n, m.index); range.setEnd(n, m.index + m[0].length);
+      const r = range.getBoundingClientRect();
+      if (r.width > 0 && r.height > 0 && r.top > 140 && r.top < window.innerHeight - 90 && r.left > 20 && r.right < window.innerWidth - 20) {
+        best = { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2), word: m[0] };
+        break;
+      }
+    }
+    return best;
+  });
+  const bookTitle = await page.evaluate(() => (document.querySelector('.reader-title') || {}).textContent || '');
+  if (fsWord) {
+    await page.mouse.click(fsWord.x, fsWord.y);
+    let fsSentOk = false;
+    const fsT0 = Date.now();
+    while (Date.now() - fsT0 < 12000) {
+      const r = await page.evaluate(() => ({ open: document.querySelector('#sent-popup').classList.contains('open'), zh: document.querySelector('#sent-zh').textContent }));
+      if (r.open && /MOCK翻译/.test(r.zh)) { fsSentOk = true; break; }
+      await page.waitForTimeout(120);
+    }
+    check('全屏态单击句子仍可翻译', fsSentOk);
+    const fsState = await page.evaluate(() => {
+      const wa = document.querySelector('#reader-container .w-active');
+      return {
+        chromeHidden: document.body.classList.contains('chrome-hidden'),
+        // 关键：全屏下不应建立真实文本选区（否则会让浏览器退出全屏）
+        realSel: (window.getSelection() && window.getSelection().rangeCount) || 0,
+        flashSpan: !!wa,
+        // 高亮的必须是正文单词，而非被误取的书标题
+        waIsTitle: wa ? wa.textContent.trim() === ((document.querySelector('.reader-title') || {}).textContent || '') : false,
+        sentOpen: document.querySelector('#sent-popup').classList.contains('open'),
+        sentZh: document.querySelector('#sent-zh').textContent.slice(0, 40)
+      };
+    });
+    check('全屏态不再建立真实选区(避免退出全屏)', fsState.realSel === 0, 'realSel=' + fsState.realSel);
+    check('全屏态顶/底栏保持隐藏', fsState.chromeHidden, JSON.stringify(fsState));
+    check('全屏态整句以 flash span 高亮', fsState.flashSpan && !fsState.waIsTitle, JSON.stringify(fsState));
+    // 关闭弹层应清掉 flash 高亮
+    await page.evaluate(() => { document.querySelector('#sent-popup').classList.remove('open'); if (typeof Interaction !== 'undefined') Interaction.clearSentence(); });
+    await page.waitForTimeout(200);
+    const cleared = await page.evaluate(() => ({
+      selOk: (window.getSelection() ? window.getSelection().rangeCount : 0) === 0,
+      noFlash: !document.querySelector('#reader-container .w-active')
+    }));
+    check('关闭后清空整句高亮', cleared.selOk && cleared.noFlash, JSON.stringify(cleared));
+  }
+
+  // EPUB(iframe) 专属：确认全屏下不在 iframe 内建真实选区（这是触发退出全屏的根因）
+  const epubOk = await page.evaluate(async () => {
+    for (const c of [...document.querySelectorAll('#shelf-grid .book-card')]) {
+      const t = c.querySelector('.book-name') ? c.querySelector('.book-name').textContent : '';
+      c.click();
+      await new Promise(r => setTimeout(r, 1800));
+      if (document.querySelector('.epub-holder iframe')) return true;
+    }
+    return false;
+  });
+  check('全屏测试: 打开 EPUB', epubOk);
+  await page.waitForSelector('.epub-holder iframe', { timeout: 10000 }).catch(() => {});
+  await page.waitForTimeout(800);
+  await setClickMode(page, 'sentence');
+  await page.evaluate(() => {
+    window.__FS_ACTIVE = true;
+    if (window.top && window.top !== window) window.top.__FS_ACTIVE = true;
+    document.body.classList.add('fs-active', 'chrome-hidden');
+  });
+  await clearSentPopup(page);
+  const ep = await findWordPointRetry(page, '.epub-holder iframe', true);
+  if (ep) {
+    await page.mouse.click(ep.x, ep.y);
+    await page.waitForTimeout(1200); // 等待 onWord(260ms) + selectSentence 执行
+    const epState = await page.evaluate(() => {
+      const f = document.querySelector('.epub-holder iframe');
+      const idoc = f && f.contentDocument;
+      const iframeSel = idoc && idoc.defaultView.getSelection ? idoc.defaultView.getSelection().rangeCount : -1;
+      const flash = !!(idoc && idoc.querySelector('.w-active'));
+      return { chromeHidden: document.body.classList.contains('chrome-hidden'), iframeSel, flash };
+    });
+    // 关键：全屏下不能在 iframe 内建真实文本选区（否则浏览器退出全屏）
+    check('全屏态(EPUB)不在 iframe 建真实选区(避免退出全屏)', epState.iframeSel === 0, 'iframeSel=' + epState.iframeSel);
+    check('全屏态(EPUB)整句用 flash span 高亮', epState.flash, JSON.stringify(epState));
+    check('全屏态(EPUB)顶/底栏保持隐藏', epState.chromeHidden, JSON.stringify(epState));
+  }
+  // 还原全屏模拟态，避免影响后续
+  await page.evaluate(() => {
+    window.__FS_ACTIVE = false;
+    if (window.top && window.top !== window) window.top.__FS_ACTIVE = false;
+    document.body.classList.remove('fs-active', 'chrome-hidden');
+  });
+  await setClickMode(page, 'both');
 
   await browser.close();
   srv.close(); proxy.close();

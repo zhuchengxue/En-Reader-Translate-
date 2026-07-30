@@ -1,6 +1,6 @@
 /* 主控逻辑：书架 / 导入 / 阅读 / 生词本 / 设置 / 统计 */
 (() => {
-  const APP_VER = '2026-07-30.49'; // 前端版本号：诊断面板可见 + index.html 版本守卫比对
+  const APP_VER = '2026-07-30.51'; // 前端版本号：诊断面板可见 + index.html 版本守卫比对
   window.APP_VER = APP_VER; // 暴露给 index.html 内联守卫脚本做版本一致性校验
   const $ = s => document.querySelector(s);
   const $$ = s => Array.from(document.querySelectorAll(s));
@@ -191,21 +191,24 @@
       if (mode === 'sentence') {
         const c = Interaction.computeSentence(info.node, info.offset);
         if (!c) return;
-        Interaction.selectSentence(info.node, info.offset);
+        // selectSentence 返回 flash span（全屏时）或 null（非全屏真实选区）
+        const span = Interaction.selectSentence(info.node, info.offset);
         let sentRect = null;
         try {
-          const sel = (info.doc.defaultView || window).getSelection();
-          if (sel && sel.rangeCount) {
-            const r = sel.getRangeAt(0).getBoundingClientRect();
-            if (r && (r.width || r.height)) {
-              let offX = 0, offY = 0;
-              if (info.doc !== document) {
-                const f = document.querySelector('.epub-holder iframe');
-                const fr = f && f.getBoundingClientRect();
-                if (fr) { offX = fr.left; offY = fr.top; }
-              }
-              sentRect = { top: r.top + offY, bottom: r.bottom + offY, left: r.left + offX, right: r.right + offX };
+          let r = null;
+          if (span) r = span.getBoundingClientRect();
+          else {
+            const sel = (info.doc.defaultView || window).getSelection();
+            if (sel && sel.rangeCount) r = sel.getRangeAt(0).getBoundingClientRect();
+          }
+          if (r && (r.width || r.height)) {
+            let offX = 0, offY = 0;
+            if (info.doc !== document) {
+              const f = document.querySelector('.epub-holder iframe');
+              const fr = f && f.getBoundingClientRect();
+              if (fr) { offX = fr.left; offY = fr.top; }
             }
+            sentRect = { top: r.top + offY, bottom: r.bottom + offY, left: r.left + offX, right: r.right + offX };
           }
         } catch (e) {}
         showSentence(c.sentence, word, x, y, sentRect);
@@ -223,12 +226,14 @@
     },
     onWordStart(word, x, y, info) {
       if (view() !== 'reader') return;
-      // 单击单词瞬间立即关闭上一句句子弹层，避免 260ms 防抖期间译文仍显示
+      // 单击单词瞬间立即关闭上一句句子弹层，避免 260ms 防斗期间译文仍显示
       if ($('#sent-popup').classList.contains('open')) {
         $('#sent-popup').classList.remove('open');
         lastSentPos = null;
         lastSentRect = null;
       }
+      // 同时清除上一句的整句高亮（全屏下是 flash span），避免旧高亮残留
+      Interaction.clearSentence();
       // 同时关闭词典卡片，避免模式切换后旧卡片残留
       if (!$('#dict-popup').classList.contains('hidden')) hideDict();
     },
@@ -265,7 +270,7 @@
     if ($('#search-panel').classList.contains('open')) { closeSearch(); closed = true; }
     if ($('#toc-drawer').classList.contains('open')) { closeToc(); closed = true; }
     if ($('#bookmark-drawer').classList.contains('open')) { closeBookmarks(); closed = true; }
-    if (closed) Interaction.clearSelection(); // 关闭弹层时清掉整句高亮
+    if (closed) Interaction.clearSentence(); // 关闭弹层时清掉整句高亮（真实选区或全屏 flash span）
     return closed;
   }
 
@@ -1311,6 +1316,9 @@
     /* 全屏=沉浸式：默认隐藏顶/底栏，不呼出工具栏；Esc / 退出按钮退出全屏 */
     document.body.classList.toggle('fs-active', fs);
     document.body.classList.toggle('chrome-hidden', fs);
+    // 供 iframe 内的 interaction 判断全屏状态（EPUB 在 iframe 里，避免建真实选区导致退出全屏）
+    window.__FS_ACTIVE = fs;
+    try { if (window.top && window.top !== window) window.top.__FS_ACTIVE = fs; } catch (e) {}
   }
 
   function bindAll() {

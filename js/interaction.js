@@ -170,14 +170,56 @@ const Interaction = (() => {
     return c ? c.sentence : (node.nodeValue || '').slice(offset).match(WORD_RE)?.[0] || '';
   }
 
+  function isFullscreenActive() {
+    try {
+      if (document.fullscreenElement) return true;
+      if (window.__FS_ACTIVE) return true;
+      if (window.top && window.top !== window) {
+        if (window.top.document.fullscreenElement) return true;
+        if (window.top.__FS_ACTIVE) return true;
+      }
+    } catch (e) {}
+    return false;
+  }
+
+  /* 把 flash 高亮 span 还原为纯文本（与 showDict 的 unwrap 逻辑一致） */
+  function unflash(span) {
+    if (!span || !span.parentNode) return;
+    while (span.firstChild) span.parentNode.insertBefore(span.firstChild, span);
+    span.parentNode.removeChild(span);
+    if (span.parentNode && span.parentNode.normalize) span.parentNode.normalize();
+  }
+
+  let sentenceFlashSpan = null;
+  /* 选中并高亮整句。
+   * 返回 span（当用 flash 高亮时）或 null（当用真实选区时）。
+   * 关键：全屏沉浸式阅读时，EPUB 内容在 iframe 内；在 iframe 文档里创建真实
+   * 文本选区会让 Chrome 退出原生全屏（文档切换），导致顶/底栏重新出现。
+   * 因此全屏下改用 flash span 高亮（不建真实选区），既不破坏全屏、又能高亮整句。 */
   function selectSentence(node, offset) {
+    const doc = node.ownerDocument || document;
     const c = computeSentence(node, offset);
-    if (!c || !c.range) return;
+    if (!c || !c.range) return null;
+    if (isFullscreenActive()) {
+      try {
+        if (sentenceFlashSpan) unflash(sentenceFlashSpan);
+        const span = flashWord(c.range, doc, 'stay');
+        sentenceFlashSpan = span;
+        return span;
+      } catch (e) { sentenceFlashSpan = null; }
+    }
     try {
       const sel = (c.range.startContainer.ownerDocument.defaultView || window).getSelection();
       sel.removeAllRanges();
       sel.addRange(c.range);
     } catch (e) {}
+    return null;
+  }
+
+  /* 清除整句高亮：还原 flash span（全屏）并移除真实选区（非全屏） */
+  function clearSentence() {
+    if (sentenceFlashSpan) { try { unflash(sentenceFlashSpan); } catch (e) {} sentenceFlashSpan = null; }
+    clearSelection();
   }
 
   function clearSel(d) {
@@ -256,8 +298,10 @@ const Interaction = (() => {
     function sentenceHit(hit, off) {
       const c = computeSentence(hit.node, hit.offset);
       const sent = c ? c.sentence : hit.word;
-      selectSentence(hit.node, hit.offset);
-      const sRect = getSentenceRect(doc);
+      const span = selectSentence(hit.node, hit.offset);
+      let sRect = null;
+      if (span) sRect = span.getBoundingClientRect();
+      else sRect = getSentenceRect(doc);
       const sentRect = sRect
         ? { top: sRect.top + off.y, bottom: sRect.bottom + off.y, left: sRect.left + off.x, right: sRect.right + off.x }
         : null;
@@ -397,5 +441,5 @@ const Interaction = (() => {
     } catch (e) {}
   }
 
-  return { wrapWords, wordAtPoint, resolveHit, sentenceOf, selectSentence, computeSentence, flashWord, clearSelection, attach };
+  return { wrapWords, wordAtPoint, resolveHit, sentenceOf, selectSentence, computeSentence, flashWord, clearSelection, clearSentence, isFullscreenActive, attach };
 })();

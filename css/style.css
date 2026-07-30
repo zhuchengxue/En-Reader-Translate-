@@ -219,8 +219,8 @@ body.no-license #activate-mask { display: none !important; }
   background: var(--bg2); border-top: 1px solid var(--border);
   transition: transform .25s, opacity .25s;
 }
-body.chrome-hidden .reader-top { transform: translateY(-100%); opacity: 0; }
-body.chrome-hidden .reader-bottom { transform: translateY(100%); opacity: 0; }
+body.chrome-hidden .reader-top { transform: translateY(-100%); opacity: 0; pointer-events: none; }
+body.chrome-hidden .reader-bottom { transform: translateY(100%); opacity: 0; pointer-events: none; }
 .progress-track { height: 3px; background: var(--border); }
 .progress-fill { height: 100%; width: 0; background: var(--accent); transition: width .3s; }
 .reader-toolbar {
