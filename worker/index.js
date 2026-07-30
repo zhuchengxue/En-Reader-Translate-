@@ -1,6 +1,5 @@
-/* Cloudflare Worker: 翻译代理（多协议兜底）
- * 优先 Workers AI → Google 免费 → Lingva
- * 启用 AI：wrangler.toml 添加 [ai] binding = "AI"
+/* Cloudflare Worker: 翻译代理（免费兜底）
+ * Google 免费 → Lingva
  */
 export default {
   async fetch(request, env) {
@@ -24,26 +23,7 @@ export default {
       return new Response(JSON.stringify({ translatedText: '' }), { headers: { ...cors, 'Content-Type': 'application/json' } });
     }
 
-    /* ① Workers AI */
-    if (env && env.AI) {
-      const langNames = { 'zh-CN': 'Chinese', 'zh': 'Chinese', 'en': 'English', 'ja': 'Japanese', 'ko': 'Korean', 'fr': 'French', 'de': 'German', 'es': 'Spanish' };
-      const src = langNames[from] || from, tgt = langNames[to] || to;
-      try {
-        const resp = await env.AI.run('@cf/meta/llama-3.2-3b-instruct', {
-          messages: [
-            { role: 'system', content: 'You are a professional translator. Translate the user text from ' + src + ' to ' + tgt + '. Only output the translation, no explanations, no quotes, no prefixes.' },
-            { role: 'user', content: text }
-          ],
-          max_tokens: Math.min(1024, text.length * 3 + 100)
-        });
-        const result = (resp && resp.response) ? String(resp.response).trim() : '';
-        if (result && result.length > 1) {
-          return new Response(JSON.stringify({ translatedText: result }), { headers: { ...cors, 'Content-Type': 'application/json' } });
-        }
-      } catch (e) { console.warn('[translate-ai]', e.message || e); }
-    }
-
-    /* ② Google 免费翻译 */
+    /* ① Google 免费翻译 */
     const ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
     const url = 'https://translate.googleapis.com/translate_a/single?client=gtx&sl=' + from + '&tl=' + to + '&dt=t&q=' + encodeURIComponent(text.slice(0, 1000));
     try {
@@ -57,7 +37,7 @@ export default {
       }
     } catch (e) {}
 
-    /* ③ Lingva 兜底 */
+    /* ② Lingva 兜底 */
     try {
       const lingva = 'https://lingva.ml/api/v1/' + from + '/' + to + '/' + encodeURIComponent(text.slice(0, 480));
       const lr = await fetch(lingva, { headers: { 'User-Agent': ua } });
