@@ -357,7 +357,7 @@ body.fs-active .fs-exit-fab { display: flex; }
 .swatch-dark { background: #1a1a1a; }
 .font-ctrl { display: flex; align-items: center; gap: 12px; }
 #font-size-label { font-size: 14px; min-width: 24px; text-align: center; }
-.seg { display: flex; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+.seg { display: flex; flex-wrap: wrap; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
 .seg button { padding: 7px 12px; font-size: 12px; color: var(--text2); }
 .seg button.on { background: var(--accent); color: #fff; }
 

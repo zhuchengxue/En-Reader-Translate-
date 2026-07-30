@@ -1,6 +1,6 @@
 /* 主控逻辑：书架 / 导入 / 阅读 / 生词本 / 设置 / 统计 */
 (() => {
-  const APP_VER = '2026-07-29.44'; // 前端版本号：诊断面板可见 + index.html 版本守卫比对
+  const APP_VER = '2026-07-29.45'; // 前端版本号：诊断面板可见 + index.html 版本守卫比对
   window.APP_VER = APP_VER; // 暴露给 index.html 内联守卫脚本做版本一致性校验
   const $ = s => document.querySelector(s);
   const $$ = s => Array.from(document.querySelectorAll(s));
@@ -140,9 +140,33 @@
     enabled: () => view() === 'reader',
     onWord(word, x, y, info) {
       if (view() !== 'reader') return;
+      const mode = settings.clickMode;
+      // 「单击单词 → 翻译整句」模式：直接选中并翻译该词所在句子
+      if (mode === 'sentence') {
+        const c = Interaction.computeSentence(info.node, info.offset);
+        if (!c) return;
+        Interaction.selectSentence(info.node, info.offset);
+        let sentRect = null;
+        try {
+          const sel = (info.doc.defaultView || window).getSelection();
+          if (sel && sel.rangeCount) {
+            const r = sel.getRangeAt(0).getBoundingClientRect();
+            if (r && (r.width || r.height)) {
+              let offX = 0, offY = 0;
+              if (info.doc !== document) {
+                const f = document.querySelector('.epub-holder iframe');
+                const fr = f && f.getBoundingClientRect();
+                if (fr) { offX = fr.left; offY = fr.top; }
+              }
+              sentRect = { top: r.top + offY, bottom: r.bottom + offY, left: r.left + offX, right: r.right + offX };
+            }
+          }
+        } catch (e) {}
+        showSentence(c.sentence, word, x, y, sentRect);
+        return;
+      }
       // 一次 flashWord 即可：传 'stay'，让 showDict 接管 span（持续高亮直到 hideDict）
       const flashSpan = Interaction.flashWord(info.range, info.doc, 'stay');
-      const mode = settings.clickMode;
       if (mode === 'sound') {
         if (flashSpan) flashSpan.classList.add('w-sound-only');
         setTimeout(() => { try { if (flashSpan && flashSpan.parentNode) { while (flashSpan.firstChild) flashSpan.parentNode.insertBefore(flashSpan.firstChild, flashSpan); flashSpan.parentNode.removeChild(flashSpan); if (flashSpan.parentNode.normalize) flashSpan.parentNode.normalize(); } } catch (e) {} }, 650);
@@ -159,11 +183,13 @@
         lastSentPos = null;
         lastSentRect = null;
       }
+      // 同时关闭词典卡片，避免模式切换后旧卡片残留
+      if (!$('#dict-popup').classList.contains('hidden')) hideDict();
     },
     onSentence(sent, word, info, sentRect) {
       if (view() !== 'reader') return;
+      // 双击现在只选中句子，不再弹出整句翻译（翻译已移到「单击单词 → 翻译句子」模式）
       hideDict();
-      showSentence(sent, word, info.x, info.y, sentRect);
     },
     onBlank(fx, target) {
       if (view() !== 'reader') return;

@@ -204,17 +204,35 @@ async function clearSentPopup(page) {
   const blankDictHidden = await page.evaluate(() => document.querySelector('#dict-popup').classList.contains('hidden'));
   check('TXT 点空白不翻译(页边距)', blankDictHidden, 'hidden=' + blankDictHidden);
 
-  // 双击单词：自动选中整句 + 句子翻译 + 词在译文内联加粗
+  // 双击单词：现在只选中整句，不再弹出整句翻译
   await page.keyboard.press('Escape'); await page.waitForTimeout(200);
   await clearSentPopup(page);
   const cw = await findWordPoint(page, '#reader-container', false);
-  t0 = Date.now();
   await page.mouse.dblclick(cw.x, cw.y);
+  await page.waitForTimeout(300);
   const selInfo = await page.evaluate(() => ({ text: window.getSelection().toString() }));
   check('双击自动选中整句(高亮)', !!cw.word && selInfo.text.toLowerCase().includes(cw.word.toLowerCase()) && selInfo.text.length > cw.word.length, 'selLen=' + selInfo.text.length + ' word=' + cw.word);
-  const sentPos1 = await page.evaluate(() => { const r = document.querySelector('#sent-popup').getBoundingClientRect(); return { top: Math.round(r.top), left: Math.round(r.left) }; });
+  const sentClosed = await page.evaluate(() => !document.querySelector('#sent-popup').classList.contains('open'));
+  check('双击不再翻译整句(弹层关闭)', sentClosed);
+
+  // 设置「单击单词 → 翻译句子」后，单击单词应弹出整句翻译
+  await page.evaluate(() => { document.querySelector('#btn-settings').click(); });
+  await page.waitForTimeout(300);
+  await page.evaluate(() => {
+    const b = [...document.querySelectorAll('#click-mode-seg button')].find(x => x.dataset.m === 'sentence');
+    if (b) b.click();
+  });
+  await page.waitForTimeout(300);
+  await page.evaluate(() => { const b = document.querySelector('#settings-close'); if (b) b.click(); });
+  await page.waitForTimeout(300);
+  const modeCheck = await page.evaluate(() => (JSON.parse(localStorage.getItem('en-reader-settings') || '{}')).clickMode);
+  await page.keyboard.press('Escape'); await page.waitForTimeout(200);
+  await clearSentPopup(page);
+  const sw = await findWordPoint(page, '#reader-container', false);
+  const t1 = Date.now();
+  if (sw) await page.mouse.click(sw.x, sw.y);
   let sentOk = false, inlineBold = false, boldTxt = '';
-  while (Date.now() - t0 < 12000) {
+  while (Date.now() - t1 < 12000) {
     const r = await page.evaluate(() => {
       const p = document.querySelector('#sent-popup');
       const zh = document.querySelector('#sent-zh').textContent;
@@ -224,21 +242,18 @@ async function clearSentPopup(page) {
     if (r.open && /MOCK翻译/.test(r.zh)) { sentOk = true; inlineBold = !!r.boldText; boldTxt = r.boldText; break; }
     await page.waitForTimeout(120);
   }
-  const sentPos2 = await page.evaluate(() => { const r = document.querySelector('#sent-popup').getBoundingClientRect(); return { top: Math.round(r.top), left: Math.round(r.left) }; });
-  check('双击翻译整句', sentOk);
-  check('双击词在译文中内联加粗(不再单独提取)', inlineBold, 'bold=' + boldTxt);
-  check('句子弹层不跳动(位置稳定)', sentPos1.top === sentPos2.top && sentPos1.left === sentPos2.left, JSON.stringify({ sentPos1, sentPos2 }));
-  const anchor = await page.evaluate(() => { const p = document.querySelector('#sent-popup').getBoundingClientRect(); return { top: Math.round(p.top), bottom: Math.round(p.bottom), vh: window.innerHeight }; });
-  check('句子弹层锚定单词附近(非底部)', anchor.top > 0 && anchor.bottom < anchor.vh - 5, JSON.stringify(anchor));
-  const ov = await page.evaluate(() => {
-    const p = document.querySelector('#sent-popup').getBoundingClientRect();
-    const sel = window.getSelection();
-    const r = sel && sel.rangeCount ? sel.getRangeAt(0).getBoundingClientRect() : null;
-    if (!r) return { ok: true, reason: 'no-sel' };
-    const overlapY = Math.min(p.bottom, r.bottom) - Math.max(p.top, r.top);
-    return { ok: overlapY <= 2, overlapY: Math.round(overlapY) };
+  check('单击单词(翻译句子模式)可翻译整句[' + modeCheck + ']', sentOk);
+  check('句中词在译文内联加粗', inlineBold, 'bold=' + boldTxt);
+  // 恢复默认模式，避免影响后续测试
+  await page.evaluate(() => { document.querySelector('#btn-settings').click(); });
+  await page.waitForTimeout(300);
+  await page.evaluate(() => {
+    const b = [...document.querySelectorAll('#click-mode-seg button')].find(x => x.dataset.m === 'both');
+    if (b) b.click();
   });
-  check('句子弹层不遮挡选中句', ov.ok, JSON.stringify(ov));
+  await page.waitForTimeout(300);
+  await page.evaluate(() => { const b = document.querySelector('#settings-close'); if (b) b.click(); });
+  await page.waitForTimeout(300);
 
   // 书签：添加 / 列表 / 跳转
   await page.keyboard.press('Escape'); await page.waitForTimeout(200);
@@ -374,7 +389,7 @@ async function clearSentPopup(page) {
 
   check('无控制台错误', logs.length === 0, logs.join(' | ').slice(0, 200));
 
-  // ===== 移动端触摸：单击单词翻译、双击整句翻译 =====
+  // ===== 移动端触摸：单击单词翻译、双击只选中句子 =====
   const mctx = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
   const mpage = await mctx.newPage();
   mpage.on('pageerror', e => logs.push('MOBILE PAGEERROR: ' + e.message));
@@ -401,7 +416,7 @@ async function clearSentPopup(page) {
     await mpage.keyboard.press('Escape');
     await mpage.waitForTimeout(400);
 
-    // 双击整句：合成 Touch 事件，精确控制 150ms 间隔
+    // 双击：合成 Touch 事件，精确控制 150ms 间隔；现在只选中句子，不翻译
     await clearSentPopup(mpage);
     await mpage.evaluate(({ x, y }) => new Promise(res => {
       const doc = document;
@@ -414,11 +429,8 @@ async function clearSentPopup(page) {
       setTimeout(() => { fire('touchstart'); fire('touchend'); res(); }, 150);
     }), { x: mcenter.x, y: mcenter.y });
     await mpage.waitForTimeout(1500);
-    const mSent = await mpage.evaluate(() => {
-      const p = document.querySelector('#sent-popup');
-      return { open: p.classList.contains('open'), zh: document.querySelector('#sent-zh').innerText, bold: !!document.querySelector('#sent-zh b.kw') };
-    });
-    check('移动端双击整句可翻译', mSent.open && /MOCK翻译/.test(mSent.zh), JSON.stringify(mSent));
+    const mSel = await mpage.evaluate(() => ({ text: window.getSelection().toString(), sentOpen: document.querySelector('#sent-popup').classList.contains('open') }));
+    check('移动端双击只选中句子(不翻译)', !!mcenter.word && mSel.text.toLowerCase().includes(mcenter.word.toLowerCase()) && mSel.text.length > mcenter.word.length && !mSel.sentOpen, JSON.stringify(mSel));
   }
   await mctx.close();
 

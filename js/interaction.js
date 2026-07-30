@@ -397,5 +397,5 @@ const Interaction = (() => {
     } catch (e) {}
   }
 
-  return { wrapWords, wordAtPoint, resolveHit, sentenceOf, selectSentence, flashWord, clearSelection, attach };
+  return { wrapWords, wordAtPoint, resolveHit, sentenceOf, selectSentence, computeSentence, flashWord, clearSelection, attach };
 })();
