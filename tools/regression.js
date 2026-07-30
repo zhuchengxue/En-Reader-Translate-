@@ -515,8 +515,9 @@ async function clearSentPopup(page) {
   await bpage.evaluate((token) => { if (window.SyncService) SyncService.setToken(token); }, SYNC_TOKEN);
   await bpage.goto(BASE); // 用 init 自动同步 + 渲染书架
   await bpage.waitForTimeout(2500);
-  const bShelf = await bpage.evaluate(() => ({ count: document.querySelectorAll('#shelf-grid .book-card').length, names: [...document.querySelectorAll('#shelf-grid .book-name')].map(x => x.textContent).slice(0, 5) }));
+  const bShelf = await bpage.evaluate(() => ({ count: document.querySelectorAll('#shelf-grid .book-card').length, names: [...document.querySelectorAll('#shelf-grid .book-name')].map(x => x.textContent).slice(0, 5), cloudCount: document.querySelectorAll('#shelf-grid .book-cloud').length }));
   check('设备 B 同步后能看到 A 的图书', bShelf.count >= 1, JSON.stringify(bShelf));
+  check('设备 B 自动同步后图书已下载(无云朵标)', bShelf.cloudCount === 0, 'cloudCount=' + bShelf.cloudCount);
   // B 打开同步下来的书，不应提示“文件缺失”
   const bOpenOk = await bpage.evaluate(async () => {
     const c = [...document.querySelectorAll('#shelf-grid .book-card')].find(x => x.querySelector('.book-name') && /Gatsby/i.test(x.querySelector('.book-name').textContent));

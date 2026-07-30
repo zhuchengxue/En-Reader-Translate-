@@ -7,6 +7,7 @@ const SyncService = (() => {
   let syncToken = null;
   let lastSyncTs = 0;
   let pushTimer = null;
+  let syncInProgress = false;
   const PUSH_DELAY = 2000;
   const MAX_PAYLOAD = 20 * 1024 * 1024; // 20MB 安全上限
 
@@ -25,6 +26,7 @@ const SyncService = (() => {
 
   function getToken() { return syncToken; }
   function available() { return !!(syncToken && navigator.onLine !== false); }
+  function syncing() { return syncInProgress; }
 
   /* ───── 元数据 + 书文件导出 ───── */
 
@@ -203,6 +205,8 @@ const SyncService = (() => {
 
   async function syncOnce() {
     if (!available()) return 0;
+    if (syncInProgress) return 0;
+    syncInProgress = true;
     try {
       const remote = await pull();
       if (!remote) return 0;
@@ -210,9 +214,18 @@ const SyncService = (() => {
       await push();
       return merged;
     } catch (e) { return 0; }
+    finally { syncInProgress = false; }
   }
 
-  const api = { init, setToken, getToken, available, syncOnce, schedulePush, exportData, pull, push };
+  /* 针对单本书的“拉取并打开”：同步一次后检查该书文件是否已落到本地 */
+  async function pullBook(id) {
+    if (!available()) return false;
+    await syncOnce();
+    const file = await DB.get('files', id);
+    return !!(file && file.data);
+  }
+
+  const api = { init, setToken, getToken, available, syncing, syncOnce, pullBook, schedulePush, exportData, pull, push };
   window.SyncService = api; // 便于调试与自动化测试直接调用
   return api;
 })();
