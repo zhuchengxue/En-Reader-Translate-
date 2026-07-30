@@ -107,10 +107,11 @@ const SyncService = (() => {
           lb.updatedAt = rb.updatedAt;
           await DB.put('books', lb); merged++;
         }
-        // 如果本地缺文件但远端有，补下载
+        // 如果本地缺文件但远端有，补下载；并标记已同步，避免本机下次再重传整本书
         if (lb._remoteOnly && rb._file) {
           await DB.put('files', { id: rb.id, data: fromBase64(rb._file) });
           lb._remoteOnly = false;
+          lb._syncedAt = rb.updatedAt || Date.now();
           await DB.put('books', lb); merged++;
         }
       } else {
@@ -122,6 +123,7 @@ const SyncService = (() => {
           coverColor: rb.coverColor || '', coverText: rb.coverText || '',
           _remoteOnly: !rb._file
         };
+        if (rb._file) entry._syncedAt = rb.updatedAt || Date.now();
         await DB.put('books', entry);
         if (rb._file) {
           await DB.put('files', { id: rb.id, data: fromBase64(rb._file) });
@@ -210,5 +212,7 @@ const SyncService = (() => {
     } catch (e) { return 0; }
   }
 
-  return { init, setToken, getToken, available, syncOnce, schedulePush, exportData, pull, push };
+  const api = { init, setToken, getToken, available, syncOnce, schedulePush, exportData, pull, push };
+  window.SyncService = api; // 便于调试与自动化测试直接调用
+  return api;
 })();

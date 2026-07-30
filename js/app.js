@@ -1,6 +1,6 @@
 /* 主控逻辑：书架 / 导入 / 阅读 / 生词本 / 设置 / 统计 */
 (() => {
-  const APP_VER = '2026-07-29.45'; // 前端版本号：诊断面板可见 + index.html 版本守卫比对
+  const APP_VER = '2026-07-30.47'; // 前端版本号：诊断面板可见 + index.html 版本守卫比对
   window.APP_VER = APP_VER; // 暴露给 index.html 内联守卫脚本做版本一致性校验
   const $ = s => document.querySelector(s);
   const $$ = s => Array.from(document.querySelectorAll(s));
@@ -818,7 +818,10 @@
       book = await DB.get('books', id);
       const file = await DB.get('files', id);
       if (!book || !file) {
-        toast('《' + (book ? book.title : '该书') + '》的文件数据已被浏览器清理，请重新导入');
+        const hint = book && book._remoteOnly
+          ? '》文件尚未同步到本机，请点顶部「同步」拉取'
+          : '》的文件数据缺失，请重新导入（或从其他设备同步）';
+        toast('《' + (book ? book.title : '该书') + hint);
         return;
       }
       if (!file.data || !(file.data instanceof ArrayBuffer)) {

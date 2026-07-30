@@ -82,7 +82,8 @@ async function handleGutenberg(req, res) {
 }
 
 /* 本地同步 mock：存 .workbuddy/sync-dev.json（仅开发用，不进入 git）
- * 书文件通过 _file base64 嵌入 books 数组，无需独立 R2 */
+ * 书文件通过 _file base64 嵌入 books 数组，无需独立 R2。
+ * 与生产 functions/api/sync.js 保持一致：PUT 时合并保留 KV 中已有的 _file。 */
 const SYNC_FILE = path.join(ROOT, '.workbuddy', 'sync-dev.json');
 async function handleSync(req, res) {
   const cors = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'GET, PUT, OPTIONS', 'Content-Type': 'application/json' };
@@ -105,7 +106,22 @@ async function handleSync(req, res) {
     if (!body || !body.data) { res.writeHead(400, cors); res.end(JSON.stringify({ error: 'Missing data' })); return; }
     if (JSON.stringify(body.data).length > 20971520) { res.writeHead(413, cors); res.end(JSON.stringify({ error: 'Too large (>20MB)' })); return; }
     const key = 'sync:' + token;
-    store[key] = body.data;
+    const existing = store[key] || { books: [], vocab: [] };
+    const fileMap = new Map();
+    for (const b of existing.books || []) {
+      if (b._file) fileMap.set(b.id, { _file: b._file, _fileSize: b._fileSize });
+    }
+    const incoming = body.data;
+    const mergedBooks = [];
+    for (const b of incoming.books || []) {
+      const kept = fileMap.get(b.id);
+      if (kept && !b._file) {
+        mergedBooks.push({ ...b, _file: kept._file, _fileSize: kept._fileSize });
+      } else {
+        mergedBooks.push(b);
+      }
+    }
+    store[key] = { books: mergedBooks, vocab: incoming.vocab || [] };
     fs.mkdirSync(path.dirname(SYNC_FILE), { recursive: true });
     fs.writeFileSync(SYNC_FILE, JSON.stringify(store, null, 2), 'utf8');
     res.writeHead(200, cors); res.end(JSON.stringify({ ok: true, ts: Date.now() }));
