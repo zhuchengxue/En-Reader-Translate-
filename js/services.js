@@ -43,24 +43,27 @@ const TTS = (() => {
     loadVoices();
     speechSynthesis.onvoiceschanged = () => {
       loadVoices();
-      if (pending) { const p = pending; pending = null; speak(p.text, p.rate, { onEnd: p.onEnd, retry: true }); }
+      if (pending) { const p = pending; pending = null; speak(p.text, p.rate, { onEnd: p.onEnd, onBoundary: p.onBoundary, retry: true }); }
     };
   }
 
   /* opts: 支持三种形式（向后兼容旧调用）
    *  - 函数 onEnd：朗读结束（或出错）回调，连续朗读靠它自动翻页
    *  - 布尔 isRetry：仅用于预热重试（不再预热时二次预热）
-   *  - 对象 { onEnd, retry } */
+   *  - 对象 { onEnd, onBoundary, retry }
+   *    onBoundary(charIndex): 朗读到某个词时触发（Web Speech 的 word boundary 事件），
+   *    用于「朗读跟随文字」——把 charIndex 映射到当前词并高亮。部分嗓音/平台不触发，
+   *    此时由调用方保留句子级高亮作为兜底（不回归）。 */
   function speak(text, rate, opts) {
     if (!('speechSynthesis' in window) || !text) return;
-    let onEnd = null, isRetry = false;
+    let onEnd = null, onBoundary = null, isRetry = false;
     if (typeof opts === 'function') onEnd = opts;
     else if (typeof opts === 'boolean') isRetry = opts;
-    else if (opts && typeof opts === 'object') { onEnd = opts.onEnd || null; isRetry = !!opts.retry; }
+    else if (opts && typeof opts === 'object') { onEnd = opts.onEnd || null; onBoundary = opts.onBoundary || null; isRetry = !!opts.retry; }
     /* 冷启动时浏览器会吞掉首次合成：先预热嗓音，就绪后再播 */
     if (!warmed && !isRetry) {
       loadVoices();
-      if (!voices.length) { pending = { text, rate, onEnd }; return; }
+      if (!voices.length) { pending = { text, rate, onEnd, onBoundary }; return; }
     }
     try { speechSynthesis.cancel(); } catch (e) {}
     const u = new SpeechSynthesisUtterance(text);
@@ -68,6 +71,12 @@ const TTS = (() => {
     if (v) u.voice = v;
     u.lang = 'en-US';
     u.rate = rate || 0.95;
+    if (onBoundary) {
+      u.onboundary = (e) => {
+        if (!e || e.name !== 'word') return;
+        try { onBoundary(e.charIndex); } catch (err) {}
+      };
+    }
     if (onEnd) {
       /* onerror（如嗓音缺失）也触发 onEnd，避免连续朗读卡在等待中 */
       u.onend = () => { try { onEnd(); } catch (e) {} };

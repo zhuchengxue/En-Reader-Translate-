@@ -321,9 +321,12 @@ body[data-theme="sepia"] .pdf-page canvas { filter: sepia(0.35) brightness(0.98)
 .tool-btn.reading { background: var(--accent); color: #fff; border-color: var(--accent); }
 .tool-btn.reading:hover { color: #fff; filter: brightness(1.06); }
 
-/* ===== 朗读跟随文字：当前句高亮 ===== */
+/* ===== 朗读跟随文字：当前句高亮 + 当前词强高亮 ===== */
 .tts-hl { background: rgba(59,130,246,.24); border-radius: 2px; box-shadow: 0 0 0 1px rgba(59,130,246,.4); }
 .textLayer .w.tts-hl { background: rgba(59,130,246,.42); }
+/* 当前正在朗读的词：更强的高亮 + 白字，形成「跟随」效果 */
+.tts-cur { background: rgba(37,99,235,.55) !important; color: #fff !important; border-radius: 3px; box-shadow: 0 0 0 1px rgba(37,99,235,.9); }
+.textLayer .w.tts-cur { background: rgba(37,99,235,.7) !important; color: #fff !important; }
 
 /* ===== 翻页效果（三种：滑动 / 淡入淡出 / 无） ===== */
 @keyframes pf-fade { from { opacity: .2; } to { opacity: 1; } }
@@ -345,8 +348,19 @@ body[data-theme="sepia"] .pdf-page canvas { filter: sepia(0.35) brightness(0.98)
 }
 body.fs-active .fs-exit-fab { display: flex; }
 .fs-exit-fab svg { width: 20px; height: 20px; }
+.fs-read-fab {
+  position: absolute; top: 10px; right: 60px; z-index: 45;
+  width: 42px; height: 42px; border-radius: 50%;
+  background: rgba(30,30,30,.62); color: #fff; border: 1px solid rgba(255,255,255,.25);
+  display: none; align-items: center; justify-content: center;
+  box-shadow: 0 2px 12px rgba(0,0,0,.35);
+}
+body.fs-active .fs-read-fab { display: flex; }
+.fs-read-fab svg { width: 18px; height: 18px; }
+.fs-read-fab.reading { background: rgba(37,99,235,.8); border-color: rgba(255,255,255,.5); }
 @supports (top: env(safe-area-inset-top)) {
   body.fs-active .fs-exit-fab { top: calc(10px + env(safe-area-inset-top)); right: calc(10px + env(safe-area-inset-right)); }
+  body.fs-active .fs-read-fab { top: calc(10px + env(safe-area-inset-top)); right: calc(60px + env(safe-area-inset-right)); }
 }
 .mask { position: absolute; inset: 0; z-index: 30; background: rgba(0,0,0,.3); }
 

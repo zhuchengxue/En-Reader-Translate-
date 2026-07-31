@@ -174,7 +174,7 @@ class TxtReader {
   }
 
   clearTts() {
-    if (this.content) this.content.querySelectorAll('.tts-hl').forEach(n => { try { n.classList.remove('tts-hl'); } catch (e) {} });
+    if (this.content) this.content.querySelectorAll('.tts-hl, .tts-cur').forEach(n => { try { n.classList.remove('tts-hl', 'tts-cur'); } catch (e) {} });
   }
 
   setPageAnim(a) { this.pageAnim = a; }

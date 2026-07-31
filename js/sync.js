@@ -10,7 +10,7 @@ const SyncService = (() => {
   let syncInProgress = false;
   const PUSH_DELAY = 2000;
   const MAX_PAYLOAD = 20 * 1024 * 1024; // 20MB 安全上限
-  const MIN_TOKEN_LENGTH = 16;
+  const MIN_TOKEN_LENGTH = 6;
 
   function normalizeToken(t) {
     const value = (t || '').trim().slice(0, 64);

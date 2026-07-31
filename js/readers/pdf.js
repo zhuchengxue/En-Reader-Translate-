@@ -286,7 +286,7 @@ class PdfReader {
   }
 
   clearTts() {
-    this.stage.querySelectorAll('.w.tts-hl').forEach(n => { try { n.classList.remove('tts-hl'); } catch (e) {} });
+    this.stage.querySelectorAll('.w.tts-hl, .w.tts-cur').forEach(n => { try { n.classList.remove('tts-hl', 'tts-cur'); } catch (e) {} });
   }
 
   setPageAnim(a) { this.pageAnim = a; }

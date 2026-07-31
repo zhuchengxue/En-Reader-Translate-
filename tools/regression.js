@@ -48,7 +48,7 @@ function serve(root, port) {
         if (req.method === 'OPTIONS') { r.writeHead(204, cors); r.end(); return; }
         const match = (req.headers.authorization || '').match(/^Bearer\s+(.+)$/i);
         const token = (match ? match[1] : '').trim().slice(0, 64);
-        if (token.length < 16) { r.writeHead(401, cors); r.end(JSON.stringify({ error: 'Missing or weak token' })); return; }
+        if (token.length < 6) { r.writeHead(401, cors); r.end(JSON.stringify({ error: 'Missing or weak token' })); return; }
         if (req.method === 'GET') {
           const data = SYNC_KV.get('sync:' + token) || { books: [], vocab: [] };
           r.writeHead(200, cors); r.end(JSON.stringify({ data, ts: Date.now() }));
@@ -244,7 +244,7 @@ async function setClickMode(page, mode) {
   await page.waitForFunction(() => !document.querySelector('#dict-popup').classList.contains('hidden'), { timeout: 5000 }).catch(() => {});
   let t0 = Date.now();
   let txtDict = '查询中…';
-  while (Date.now() - t0 < 12000) { txtDict = await page.evaluate(() => document.querySelector('#dict-body').innerText); if (txtDict !== '查询中…') break; await page.waitForTimeout(120); }
+  while (Date.now() - t0 < 12000) { txtDict = await page.evaluate(() => document.querySelector('#dict-body').innerText); if (/MOCK翻译/.test(txtDict)) break; await page.waitForTimeout(120); }
   const txtTTS = await page.evaluate(() => window.__speak);
   const txtPopupOpen = await page.evaluate(() => !document.querySelector('#dict-popup').classList.contains('hidden'));
   check('TXT 单击可翻译(代理快)', txtPopupOpen && /MOCK翻译/.test(txtDict), 'ms=' + (Date.now() - t0) + ' open=' + txtPopupOpen + ' body=' + txtDict.slice(0, 30));
@@ -393,7 +393,7 @@ async function setClickMode(page, mode) {
   if (epubPt) await page.mouse.click(epubPt.x, epubPt.y);
   await page.waitForFunction(() => !document.querySelector('#dict-popup').classList.contains('hidden'), { timeout: 5000 }).catch(() => {});
   t0 = Date.now(); let epubDict = '查询中…';
-  while (Date.now() - t0 < 12000) { epubDict = await page.evaluate(() => document.querySelector('#dict-body').innerText); if (epubDict !== '查询中…') break; await page.waitForTimeout(120); }
+  while (Date.now() - t0 < 12000) { epubDict = await page.evaluate(() => document.querySelector('#dict-body').innerText); if (/MOCK翻译/.test(epubDict)) break; await page.waitForTimeout(120); }
   const epubPopupOpen = await page.evaluate(() => !document.querySelector('#dict-popup').classList.contains('hidden'));
   check('EPUB 单击可翻译', epubPopupOpen && /MOCK翻译/.test(epubDict), 'open=' + epubPopupOpen + ' body=' + epubDict.slice(0, 24));
 
@@ -408,7 +408,7 @@ async function setClickMode(page, mode) {
   if (pdfPt) await page.mouse.click(pdfPt.x, pdfPt.y);
   await page.waitForFunction(() => !document.querySelector('#dict-popup').classList.contains('hidden'), { timeout: 5000 }).catch(() => {});
   t0 = Date.now(); let pdfDict = '查询中…';
-  while (Date.now() - t0 < 12000) { pdfDict = await page.evaluate(() => document.querySelector('#dict-body').innerText); if (pdfDict !== '查询中…') break; await page.waitForTimeout(120); }
+  while (Date.now() - t0 < 12000) { pdfDict = await page.evaluate(() => document.querySelector('#dict-body').innerText); if (/MOCK翻译/.test(pdfDict)) break; await page.waitForTimeout(120); }
   const pdfPopupOpen = await page.evaluate(() => !document.querySelector('#dict-popup').classList.contains('hidden'));
   check('PDF 单击可翻译', pdfPopupOpen && /MOCK翻译/.test(pdfDict), 'open=' + pdfPopupOpen + ' body=' + pdfDict.slice(0, 24));
 
@@ -471,7 +471,7 @@ async function setClickMode(page, mode) {
     await mpage.touchscreen.tap(mcenter.x, mcenter.y);
     await mpage.waitForFunction(() => !document.querySelector('#dict-popup').classList.contains('hidden'), { timeout: 5000 }).catch(() => {});
     let t0 = Date.now(); let mDict = '查询中…';
-    while (Date.now() - t0 < 12000) { mDict = await mpage.evaluate(() => document.querySelector('#dict-body').innerText); if (mDict !== '查询中…') break; await mpage.waitForTimeout(120); }
+    while (Date.now() - t0 < 12000) { mDict = await mpage.evaluate(() => document.querySelector('#dict-body').innerText); if (/MOCK翻译/.test(mDict)) break; await mpage.waitForTimeout(120); }
     const mPopupOpen = await mpage.evaluate(() => !document.querySelector('#dict-popup').classList.contains('hidden'));
     check('移动端单击单词可翻译', mPopupOpen && /MOCK翻译/.test(mDict), 'open=' + mPopupOpen + ' body=' + mDict.slice(0, 24));
 

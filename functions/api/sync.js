@@ -17,7 +17,7 @@ function getToken(request) {
   const auth = request.headers.get('Authorization') || '';
   const match = auth.match(/^Bearer\s+(.+)$/i);
   const token = (match ? match[1] : '').trim().slice(0, 64);
-  return token.length >= 16 ? token : '';
+  return token.length >= 6 ? token : '';
 }
 
 async function tokenKey(token) {

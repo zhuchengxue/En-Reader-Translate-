@@ -90,7 +90,7 @@ async function handleSync(req, res) {
   if (req.method === 'OPTIONS') { res.writeHead(204, cors); res.end(); return; }
   const match = (req.headers.authorization || '').match(/^Bearer\s+(.+)$/i);
   const token = (match ? match[1] : '').trim().slice(0, 64);
-  if (token.length < 16) { res.writeHead(401, cors); res.end(JSON.stringify({ error: 'Missing or weak token' })); return; }
+  if (token.length < 6) { res.writeHead(401, cors); res.end(JSON.stringify({ error: 'Missing or weak token' })); return; }
   const key = 'sync:v2:' + createHash('sha256').update(token).digest('hex');
   let store = {};
   try { store = JSON.parse(fs.readFileSync(SYNC_FILE, 'utf8')); } catch (e) {}

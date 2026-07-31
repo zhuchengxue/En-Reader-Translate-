@@ -1,6 +1,6 @@
 /* 主控逻辑：书架 / 导入 / 阅读 / 生词本 / 设置 / 统计 */
 (() => {
-  const APP_VER = '2026-07-30.52'; // 前端版本号：诊断面板可见 + index.html 版本守卫比对
+  const APP_VER = '2026-07-30.53'; // 前端版本号：诊断面板可见 + index.html 版本守卫比对
   window.APP_VER = APP_VER; // 暴露给 index.html 内联守卫脚本做版本一致性校验
   const $ = s => document.querySelector(s);
   const $$ = s => Array.from(document.querySelectorAll(s));
@@ -814,6 +814,7 @@
     stop() {
       this.continuous = false;
       if (this._pageSegs) for (const s of this._pageSegs) ttsHl(s, false);
+      if (this._curWord) { try { this._curWord.classList.remove('tts-cur'); } catch (e) {} this._curWord = null; }
       if (this._relo && reader && reader.rendition) {
         try { reader.rendition.off('relocated', this._relo); } catch (e) {}
         this._relo = null;
@@ -822,6 +823,53 @@
       if (reader && reader.clearTts) try { reader.clearTts(); } catch (e) {}
       this._segIdx = null; this._pageSegs = [];
       this._updateBtn();
+    },
+    /* 把一段（seg.nodes）拆成单词 span，并建立 charIndex → 单词节点 的映射，
+     * 供 onboundary 高亮当前词。seg.text 是各词用单空格连接的结果，偏移据此计算。 */
+    _buildWordMap(seg) {
+      if (seg._wordMap) return seg._wordMap;
+      const words = [];
+      for (const n of (seg.nodes || [])) this._splitNode(n);
+      const spans = [];
+      for (const n of (seg.nodes || [])) {
+        try { n.querySelectorAll('.tts-word').forEach(sp => spans.push(sp)); } catch (e) {}
+      }
+      let off = 0;
+      for (const sp of spans) {
+        const t = (sp.textContent || '').trim();
+        if (!t) continue;
+        words.push({ text: t, node: sp, start: off, end: off + t.length });
+        off += t.length + 1; // +1：词间单空格
+      }
+      seg._wordMap = words;
+      return words;
+    },
+    _splitNode(n) {
+      if (!n || !n.classList) return;
+      if (n.classList.contains('w') || n.classList.contains('tts-word')) return; // PDF 整词 / 已拆过
+      const text = n.textContent || '';
+      if (!/\S/.test(text)) return;
+      const toks = text.split(/(\s+)/); // 保留空白片段
+      const doc = n.ownerDocument || document;
+      const frag = doc.createDocumentFragment();
+      for (const tk of toks) {
+        if (tk === '') continue;
+        if (/^\s+$/.test(tk)) frag.appendChild(doc.createTextNode(tk));
+        else {
+          const sp = doc.createElement('span');
+          sp.className = 'tts-word';
+          sp.textContent = tk;
+          frag.appendChild(sp);
+        }
+      }
+      while (n.firstChild) n.removeChild(n.firstChild);
+      n.appendChild(frag);
+    },
+    _wordAt(words, ci) {
+      if (!words || !words.length) return null;
+      let pick = words[0];
+      for (const w of words) { if (ci >= w.start) pick = w; else break; }
+      return pick;
     },
     async _step() {
       if (!this.continuous) return;
@@ -850,12 +898,26 @@
         return;
       }
       const seg = this._pageSegs[this._segIdx];
-      ttsHl(seg, true);
-      TTS.speak(seg.text, this.rate, () => {
-        if (!this.continuous) return;
-        ttsHl(seg, false);
-        this._segIdx++;
-        this._step();
+      ttsHl(seg, true); // 句子级兜底高亮：即使 onboundary 不触发也能看到当前句
+      const words = this._buildWordMap(seg);
+      this._curWord = null;
+      TTS.speak(seg.text, this.rate, {
+        onBoundary: (ci) => {
+          if (!this.continuous) return;
+          const w = this._wordAt(words, ci);
+          if (w && w.node !== this._curWord) {
+            if (this._curWord) { try { this._curWord.classList.remove('tts-cur'); } catch (e) {} }
+            try { w.node.classList.add('tts-cur'); } catch (e) {}
+            this._curWord = w.node;
+          }
+        },
+        onEnd: () => {
+          if (!this.continuous) return;
+          if (this._curWord) { try { this._curWord.classList.remove('tts-cur'); } catch (e) {} this._curWord = null; }
+          ttsHl(seg, false);
+          this._segIdx++;
+          this._step();
+        }
       });
     },
     _emptyFail() {
@@ -881,6 +943,8 @@
       if (!b) return;
       if (this.continuous) { b.textContent = '停止'; b.classList.add('reading'); }
       else { b.textContent = '朗读'; b.classList.remove('reading'); }
+      const fb = $('#fs-read-fab');
+      if (fb) { fb.classList.toggle('reading', this.continuous); fb.title = this.continuous ? '停止朗读 (全屏)' : '全屏朗读'; }
     }
   };
 
@@ -1346,6 +1410,9 @@
     // 供 iframe 内的 interaction 判断全屏状态（EPUB 在 iframe 里，避免建真实选区导致退出全屏）
     window.__FS_ACTIVE = fs;
     try { if (window.top && window.top !== window) window.top.__FS_ACTIVE = fs; } catch (e) {}
+    /* 退出全屏时清除整句 flash 高亮（全屏下双击/单击句子产生的 .w-active 残留在 iframe 内，
+     * 不清除会一直留在屏幕上直到下次点击） */
+    if (!fs) { try { Interaction.clearSentence(); } catch (e) {} }
   }
 
   function bindAll() {
@@ -1446,6 +1513,7 @@
     /* 全屏：按钮 + 状态同步 + F 快捷键（阅读视图、非输入框）+ 退出浮钮 */
     on('#btn-fs', 'click', toggleFullscreen);
     on('#fs-exit-fab', 'click', toggleFullscreen);
+    on('#fs-read-fab', 'click', () => { if (ttsCtl.continuous) ttsCtl.stop(); else ttsCtl.startContinuous(); });
     document.addEventListener('fullscreenchange', syncFsBtn);
     document.addEventListener('webkitfullscreenchange', syncFsBtn);
     document.addEventListener('keydown', (e) => {
