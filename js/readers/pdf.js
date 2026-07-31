@@ -261,13 +261,12 @@ class PdfReader {
   async getPageText() { return await this._pageText(this.page); }
   async getCurrentText() { return await this._pageText(this.page); }
 
-  /* 朗读跟随文字：把当前页文本层的整词（.w）按句末标点分组，返回 [{text, nodes}] */
+  /* 朗读跟随文字：把当前屏文本层的整词（.w）按句末标点分组，返回 [{text, nodes}]。
+   * 双页模式下遍历全部可见文本层（左页→右页，DOM 顺序），保证朗读顺序与视觉一致。 */
   getPageSegments() {
     const segs = [];
-    const tl = this.stage.querySelector('.textLayer');
-    if (!tl) return segs;
-    const words = Array.from(tl.querySelectorAll('.w'));
-    if (!words.length) return segs;
+    const tls = this.stage.querySelectorAll('.textLayer');
+    if (!tls.length) return segs;
     let cur = [];
     const flush = () => {
       if (cur.length) {
@@ -276,10 +275,13 @@ class PdfReader {
         cur = [];
       }
     };
-    for (const w of words) {
-      cur.push(w);
-      const t = (w.textContent || '').trim();
-      if (/[.!?]["')\]]?$/.test(t)) flush();
+    for (const tl of tls) {
+      const words = Array.from(tl.querySelectorAll('.w'));
+      for (const w of words) {
+        cur.push(w);
+        const t = (w.textContent || '').trim();
+        if (/[.!?]["')\]]?$/.test(t)) flush();
+      }
     }
     flush();
     return segs;

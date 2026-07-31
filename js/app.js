@@ -1,6 +1,6 @@
 /* 主控逻辑：书架 / 导入 / 阅读 / 生词本 / 设置 / 统计 */
 (() => {
-  const APP_VER = '2026-07-30.54'; // 前端版本号：诊断面板可见 + index.html 版本守卫比对
+  const APP_VER = '2026-07-30.55'; // 前端版本号：诊断面板可见 + index.html 版本守卫比对
   window.APP_VER = APP_VER; // 暴露给 index.html 内联守卫脚本做版本一致性校验
   const $ = s => document.querySelector(s);
   const $$ = s => Array.from(document.querySelectorAll(s));
@@ -277,12 +277,13 @@
       if (target && target.closest && target.closest('.reader-top,.reader-bottom,.settings-panel,.toc-drawer,.bookmark-drawer,.dict-popup,.sent-popup,.mask,.toast,.loading')) return;
       if (closeAnyPopup()) return;
       if (!reader) return;
-      if (fx < 0.3) reader.prev();
-      else if (fx > 0.7) reader.next();
+      if (fx < 0.3) { ttsCtl.invalidatePage(); reader.prev(); }
+      else if (fx > 0.7) { ttsCtl.invalidatePage(); reader.next(); }
       // 点击页面中部（空白处）不再隐藏顶/底栏；仅全屏时由 syncFsBtn 控制 chrome-hidden
     },
     onSwipe(dir) {
       if (view() !== 'reader' || !reader) return;
+      ttsCtl.invalidatePage();
       if (dir === 'left') reader.next();
       else if (dir === 'right') reader.prev();
     }
@@ -779,6 +780,7 @@
     renderBookmarks();
   }
   function jumpToBookmark(bm) {
+    if (ttsCtl) ttsCtl.invalidatePage();
     if (reader && reader.goTo) { try { reader.goTo(bm.location); } catch (e) {} }
     closeBookmarks();
   }
@@ -789,6 +791,7 @@
    * 切屏后自动重建，保证高亮永远落在可见文本上。 */
   const ttsCtl = {
     continuous: false,
+    paused: false,
     rate: 0.95,
     _segIdx: null,
     _pageSegs: [],
@@ -797,12 +800,17 @@
     _nomove: 0,
     _empty: 0,
     _moved: false,
+    _autoAdv: false,
     _relo: null,
-    startContinuous() {
+    _curWord: null,
+    /* 开始连续朗读（从当前屏幕）；若处于暂停态则继续（从被打断的句子） */
+    start() {
       if (!reader) return;
+      if (this.paused) { this._resume(); return; }
       if (this.continuous) { this.stop(); return; }
       this.continuous = true;
-      this._segIdx = null; this._lastKey = ''; this._nomove = 0; this._empty = 0; this._moved = false;
+      this.paused = false;
+      this._segIdx = null; this._lastKey = ''; this._nomove = 0; this._empty = 0; this._moved = false; this._pageSegs = [];
       /* EPUB：监听 relocated，确认翻页真的生效，避免渲染慢导致误判「读完」 */
       if (reader instanceof EpubReader && reader.rendition) {
         this._relo = () => { this._moved = true; };
@@ -811,18 +819,42 @@
       this._updateBtn();
       this._step();
     },
+    /* 暂停：停止语音但保留 _pageSegs/_segIdx，点击「继续」可从中断的句子恢复 */
+    pause() {
+      if (!this.continuous || this.paused) return;
+      this.paused = true;
+      try { TTS.stop(); } catch (e) {}
+      if (this._curWord) { try { this._curWord.classList.remove('tts-cur'); } catch (e) {} this._curWord = null; }
+      this._updateBtn();
+    },
+    _resume() {
+      this.paused = false;
+      this._updateBtn();
+      /* 若 _segIdx 已越界（上一句读完但还没翻页），重新加载当前屏；否则复用已有片段继续 */
+      if (this._segIdx == null || this._segIdx >= this._pageSegs.length) {
+        this._segIdx = null; this._pageSegs = []; this._lastKey = '';
+      }
+      this._step();
+    },
     stop() {
       this.continuous = false;
+      this.paused = false;
       if (this._pageSegs) for (const s of this._pageSegs) ttsHl(s, false);
       if (this._curWord) { try { this._curWord.classList.remove('tts-cur'); } catch (e) {} this._curWord = null; }
       if (this._relo && reader && reader.rendition) {
         try { reader.rendition.off('relocated', this._relo); } catch (e) {}
         this._relo = null;
       }
-      TTS.stop();
+      try { TTS.stop(); } catch (e) {}
       if (reader && reader.clearTts) try { reader.clearTts(); } catch (e) {}
       this._segIdx = null; this._pageSegs = [];
       this._updateBtn();
+    },
+    /* 手动翻页/跳转：作废旧的屏幕片段与页面 key，下次 _step 重新加载当前屏。
+     * 自动翻页(_advance)期间设 _autoAdv 跳过，避免打断跟随逻辑。 */
+    invalidatePage() {
+      if (!this.continuous || this._autoAdv) return;
+      this._segIdx = null; this._pageSegs = []; this._lastKey = '';
     },
     /* 把一段（seg.nodes）拆成单词 span，并建立 charIndex → 单词节点 的映射，
      * 供 onboundary 高亮当前词。seg.text 是各词用单空格连接的结果，偏移据此计算。 */
@@ -872,9 +904,9 @@
       return pick;
     },
     async _step() {
-      if (!this.continuous) return;
+      if (!this.continuous || this.paused) return;
       if (this._segIdx == null) {
-        /* 加载当前屏的句子片段 */
+        /* 加载当前屏的句子片段（从当前可见屏幕开始朗读） */
         try { this._pageSegs = reader.getPageSegments ? reader.getPageSegments() : []; } catch (e) { this._pageSegs = []; }
         this._segIdx = 0;
         try { this._pageKey = (reader.getPageText ? (await reader.getPageText()) : '') || ''; } catch (e) { this._pageKey = ''; }
@@ -901,7 +933,7 @@
       this._curWord = null;
       TTS.speak(seg.text, this.rate, {
         onBoundary: (ci) => {
-          if (!this.continuous) return;
+          if (!this.continuous || this.paused) return;
           const w = this._wordAt(words, ci);
           if (w && w.node !== this._curWord) {
             if (this._curWord) { try { this._curWord.classList.remove('tts-cur'); } catch (e) {} }
@@ -910,7 +942,7 @@
           }
         },
         onEnd: () => {
-          if (!this.continuous) return;
+          if (!this.continuous || this.paused) return;
           if (this._curWord) { try { this._curWord.classList.remove('tts-cur'); } catch (e) {} this._curWord = null; }
           ttsHl(seg, false);
           this._segIdx++;
@@ -940,13 +972,16 @@
     },
     _advance() {
       this._moved = false;
+      this._autoAdv = true;
       if (reader) { try { reader.next(); } catch (e) {} }
+      this._autoAdv = false;
     },
     _updateBtn() {
       const b = $('#btn-read');
       if (!b) return;
-      if (this.continuous) { b.textContent = '停止'; b.classList.add('reading'); }
-      else { b.textContent = '朗读'; b.classList.remove('reading'); }
+      if (!this.continuous) { b.textContent = '朗读'; b.classList.remove('reading', 'paused'); }
+      else if (this.paused) { b.textContent = '继续'; b.classList.add('paused'); b.classList.remove('reading'); }
+      else { b.textContent = '停止'; b.classList.add('reading'); b.classList.remove('paused'); }
     }
   };
 
@@ -1060,6 +1095,7 @@
       btn.className = 'toc-item' + (item.lv === 2 ? ' lv2' : '');
       btn.textContent = item.label;
       btn.addEventListener('click', () => {
+        ttsCtl.invalidatePage();
         reader && reader.goTo(item.target);
         closeToc();
       });
@@ -1118,6 +1154,7 @@
         esc(r.snippet).replace(hlRe, '<b>$1</b>');
       btn.addEventListener('click', () => {
         closeSearch();
+        ttsCtl.invalidatePage();
         try { reader && reader.showMatch && reader.showMatch(r.target, q); } catch (e) {}
       });
       frag.appendChild(btn);
@@ -1480,8 +1517,8 @@
 
     /* 阅读工具栏 */
     on('#btn-back', 'click', closeBook);
-    on('#btn-prev', 'click', () => reader && reader.prev());
-    on('#btn-next', 'click', () => reader && reader.next());
+    on('#btn-prev', 'click', () => { ttsCtl.invalidatePage(); reader && reader.prev(); });
+    on('#btn-next', 'click', () => { ttsCtl.invalidatePage(); reader && reader.next(); });
     on('#btn-toc', 'click', openToc);
     on('#btn-toc-close', 'click', closeToc);
     on('#toc-mask', 'click', closeToc);
@@ -1494,7 +1531,7 @@
     on('#bm-input', 'keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); addBookmark(); } });
 
     /* 朗读：连续朗读（从当前屏幕开始，逐句跟随高亮） */
-    on('#btn-read', 'click', () => { if (ttsCtl.continuous) ttsCtl.stop(); else ttsCtl.startContinuous(); });
+    on('#btn-read', 'click', () => { if (ttsCtl.continuous && !ttsCtl.paused) ttsCtl.pause(); else ttsCtl.start(); });
     on('#btn-settings', 'click', () => {
       $('#settings-panel').classList.contains('open') ? closeSettings() : openSettings();
     });
@@ -1679,8 +1716,8 @@
       if (e.key === 'Escape') { closeAnyPopup(); ttsCtl.stop(); return; }
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f') { e.preventDefault(); openSearch(); return; }
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
-      if (e.key === 'ArrowRight' || e.key === ' ') { e.preventDefault(); reader && reader.next(); }
-      if (e.key === 'ArrowLeft') { e.preventDefault(); reader && reader.prev(); }
+      if (e.key === 'ArrowRight' || e.key === ' ') { e.preventDefault(); ttsCtl.invalidatePage(); reader && reader.next(); }
+      if (e.key === 'ArrowLeft') { e.preventDefault(); ttsCtl.invalidatePage(); reader && reader.prev(); }
     });
 
     /* 窗口尺寸变化 */

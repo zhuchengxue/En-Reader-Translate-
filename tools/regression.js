@@ -356,8 +356,61 @@ async function setClickMode(page, mode) {
   check('朗读跟随文字(高亮节点)', hlCount > 0, 'hl=' + hlCount);
   await page.evaluate(() => document.querySelector('#btn-read').click());
   await page.waitForTimeout(200);
-  const stopped = await page.evaluate(() => document.querySelector('#btn-read').textContent);
-  check('连续朗读可停止', /朗读/.test(stopped), 'txt=' + stopped);
+  const paused = await page.evaluate(() => ({ txt: document.querySelector('#btn-read').textContent, speak: window.__speak }));
+  check('连续朗读可暂停(按钮变继续+TTS保留)', /继续/.test(paused.txt) && paused.speak > 0, JSON.stringify(paused));
+  // 暂停后再点一次：从被打断的句子继续朗读
+  await page.evaluate(() => document.querySelector('#btn-read').click());
+  await page.waitForTimeout(200);
+  const resumed = await page.evaluate(() => document.querySelector('#btn-read').textContent);
+  check('暂停后继续朗读(按钮回停止)', /停止/.test(resumed), 'txt=' + resumed);
+
+  // 朗读从当前屏（非首屏）开始：记录首屏首段，前进若干页后重新朗读，断言读的是当前屏
+  await page.evaluate(() => {
+    window.__speak = 0; window.__lastText = '';
+    window.speechSynthesis.speak = (u) => { window.__speak++; window.__lastText = u && u.text; };
+  });
+  const firstPara = await page.evaluate(() => {
+    const txt = document.querySelector('#reader-container .txt-content');
+    if (txt) {
+      const vp = (txt.closest('.reader-container') || document).getBoundingClientRect();
+      for (const p of txt.children) { const r = p.getBoundingClientRect(); if (r.width && r.bottom > vp.top + 2) return (p.textContent || '').trim(); }
+      return (txt.children[0] || {}).textContent || '';
+    }
+    const f = document.querySelector('.epub-holder iframe');
+    if (f && f.contentDocument) {
+      const d = f.contentDocument, w = f.contentWindow;
+      const els = d.body.querySelectorAll('p, li, h1, h2, h3, h4, blockquote, div');
+      for (const el of els) { const r = el.getBoundingClientRect(); if (r.width && r.bottom > 0 && r.top < w.innerHeight) { if (el.children.length && el.querySelector('p, li')) continue; const t = (el.textContent || '').trim(); if (t) return t; } }
+    }
+    return '';
+  });
+  for (let i = 0; i < 3; i++) { await page.evaluate(() => document.querySelector('#btn-next').click()); await page.waitForTimeout(150); }
+  await page.waitForTimeout(300);
+  await page.evaluate(() => document.querySelector('#btn-read').click()); await page.waitForTimeout(150); // 先停
+  await page.evaluate(() => document.querySelector('#btn-read').click()); await page.waitForTimeout(400); // 从当前屏开读
+  const spoken = await page.evaluate(() => window.__lastText || '');
+  check('朗读从当前屏开始(非首页)', spoken && spoken.trim() && spoken.trim() !== (firstPara || '').trim(), JSON.stringify({ first: (firstPara || '').slice(0, 24), spoken: spoken.slice(0, 24) }));
+  await page.evaluate(() => document.querySelector('#btn-read').click()); await page.waitForTimeout(100); // 停，复位状态
+
+  // 同步令牌最短 6 位（Part A 验收）：直接验证 normalizeToken 门限 + 输入框 minlength
+  const tokOk = await page.evaluate(() => {
+    if (!window.SyncService) return { ok: false };
+    const tooShort = SyncService.setToken('12345');      // 5 位应拒绝
+    const accepted = SyncService.setToken('123456');     // 6 位应接受
+    const input = document.querySelector('#shelf-sync-input');
+    const min = input ? input.getAttribute('minlength') : null;
+    const ok = tooShort === false && accepted === true && SyncService.getToken() === '123456';
+    // 清理：必须同时清【内存口令】+【localStorage】！只清 localStorage 不够——SyncService
+    // 的 in-memory syncToken 仍是 '123456'，后续 EPUB/PDF 用例 openByTitle→openBook→schedulePush
+    // 会在 2s 后触发一次真实推送，给所有图书打上 _syncedAt，导致跨设备同步用例只上传元数据
+    // （无文件体），B 端永远收不到书文件。这是之前该用例偶发 FAIL 的根因。
+    SyncService.setToken('');                             // 清内存口令
+    const s = JSON.parse(localStorage.getItem('en-reader-settings') || '{}');
+    delete s.syncToken; delete s._syncTs;
+    localStorage.setItem('en-reader-settings', JSON.stringify(s));
+    return { ok, tooShort, accepted, min };
+  });
+  check('同步令牌最短 6 位(6可用/5拒绝)', tokOk.ok === true && tokOk.min === '6', JSON.stringify(tokOk));
 
   // 翻页效果设置 + 全屏退出浮钮 + 设置关闭按钮
   const paSeg = await page.evaluate(() => !!document.querySelector('#pageanim-seg'));
@@ -508,6 +561,11 @@ async function setClickMode(page, mode) {
     const merged = await SyncService.syncOnce();
     return { merged, tokenSet: SyncService.getToken(), online: navigator.onLine };
   }, SYNC_TOKEN);
+  // 守卫：首次推送必须把书文件体带上（_syncedAt 不能在推送前被其他用例的 schedulePush 打上，
+  // 否则只上传元数据，B 端收不到文件）。这能抓住「令牌用例只清 localStorage 未清内存令牌」类回归。
+  const kvAfterPush1 = (SYNC_KV.get('sync:' + SYNC_TOKEN) || {}).books || [];
+  const kvHasFiles = kvAfterPush1.filter(b => b._file).length;
+  check('设备A首次推送含文件体', kvHasFiles >= 1, 'files=' + kvHasFiles);
   check('设备 A 同步推送成功', aSync.tokenSet === SYNC_TOKEN && aSync.merged >= 0, JSON.stringify(aSync));
 
   // 模拟 A 后续只改进度（元数据推送），不应把 KV 里的文件覆盖掉

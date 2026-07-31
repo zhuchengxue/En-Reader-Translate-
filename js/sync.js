@@ -115,12 +115,16 @@ const SyncService = (() => {
           lb.updatedAt = rb.updatedAt;
           await DB.put('books', lb); merged++;
         }
-        // 如果本地缺文件但远端有，补下载；并标记已同步，避免本机下次再重传整本书
-        if (lb._remoteOnly && rb._file) {
-          await DB.put('files', { id: rb.id, data: fromBase64(rb._file) });
-          lb._remoteOnly = false;
+        // 远端带有文件体：只要本机缺文件（含 _remoteOnly 元数据书、或被浏览器清理过文件）
+        // 就补下载到本地；并清掉 _remoteOnly 标记，保证「点击云标→下载→打开→刷新仍在」闭环。
+        if (rb._file) {
+          const have = await DB.get('files', rb.id);
+          if (!have || !have.data || lb._remoteOnly) {
+            await DB.put('files', { id: rb.id, data: fromBase64(rb._file) });
+          }
+          if (lb._remoteOnly) { lb._remoteOnly = false; merged++; }
           lb._syncedAt = rb.updatedAt || Date.now();
-          await DB.put('books', lb); merged++;
+          await DB.put('books', lb);
         }
       } else {
         // 本地没有：存元数据，如果有文件体一并存入

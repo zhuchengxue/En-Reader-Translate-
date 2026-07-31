@@ -83,6 +83,7 @@ class TxtReader {
   }
 
   layout() {
+    const saved = this._lastLogical;
     const W = this.viewport.clientWidth;
     const g = 56;
     const cw = this.pageMode === 'double' ? Math.floor((W - g) / 2) : W;
@@ -96,6 +97,19 @@ class TxtReader {
     void this.content.offsetHeight;
     this.pages = Math.max(1, Math.ceil(this.content.scrollWidth / this.step));
     if (this.page > this.pages - 1) this.page = this.pages - 1;
+    /* 全屏 / 窗口缩放后还原到同一段落，保持阅读位置不丢失。
+     * 其余阅读器靠 CFI（EPUB）或页码（PDF）天然保留，仅 TXT 多列分页需要此锚定。 */
+    if (saved && saved.section === this.section) {
+      const ps = this.content.children;
+      const i = Math.min(saved.para, ps.length - 1);
+      const p = ps[i];
+      if (p) {
+        const vp = this.viewport.getBoundingClientRect();
+        const r = p.getBoundingClientRect();
+        const page = Math.max(0, Math.min(this.pages - 1, Math.floor((r.left - vp.left) / this.step)));
+        this.page = page;
+      }
+    }
     this.update();
   }
 
@@ -113,6 +127,7 @@ class TxtReader {
       el.style.transition = 'transform .26s cubic-bezier(.4,0,.2,1)';
     }
     el.style.transform = 'translateX(' + (-this.page * this.step) + 'px)';
+    this._lastLogical = this._logical();
     if (this.onProgress) {
       const pct = (this.section + (this.page + 1) / this.pages) / this.sections.length;
       this.onProgress({
@@ -121,6 +136,19 @@ class TxtReader {
         location: { section: this.section, page: this.page }
       });
     }
+  }
+
+  /* 记录当前阅读逻辑锚点（章节 + 首屏可见段序号），供 resize/全屏后还原 */
+  _logical() {
+    try {
+      const ps = this.content.children;
+      const vp = this.viewport.getBoundingClientRect();
+      for (let i = 0; i < ps.length; i++) {
+        const r = ps[i].getBoundingClientRect();
+        if (r.width && r.bottom > vp.top + 2) return { section: this.section, para: i };
+      }
+    } catch (e) {}
+    return { section: this.section, para: 0 };
   }
 
   next() {
