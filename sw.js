@@ -1,6 +1,6 @@
 /* 应用外壳缓存：网络优先（改动即时生效），失败回退缓存（离线可读）。仅缓存同源静态资源。
  * 版本号随每次重大改动递增，激活时清除旧版本缓存，避免浏览器一直用旧的破损 JS。 */
-const CACHE = 'en-reader-v34';
+const CACHE = 'en-reader-v35';
 self.addEventListener('install', (e) => {
   // 立即激活新 SW，配合 clients.claim 让新版本尽快接管
   self.skipWaiting();

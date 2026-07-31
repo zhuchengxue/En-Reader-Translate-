@@ -95,17 +95,6 @@ const BASE = 'http://localhost:9123';
     check('TXT 全屏: 双击产生 flash 高亮', d.flash > 0, 'flash=' + d.flash);
     check('TXT 全屏: 双击后仍在全屏', d.fsStill);
   }
-  // 全屏朗读浮钮：可见且可启动跟随朗读
-  const fabVisible = await page.evaluate(() => { const f = document.querySelector('#fs-read-fab'); return !!f && getComputedStyle(f).display !== 'none'; });
-  check('TXT 全屏: 朗读浮钮可见', fabVisible);
-  if (fabVisible) {
-    await page.evaluate(() => document.querySelector('#fs-read-fab').click());
-    await page.waitForTimeout(2000);
-    const r = await page.evaluate(() => ({ reading: document.querySelector('#fs-read-fab').classList.contains('reading'), cur: document.querySelectorAll('#reader-container .tts-cur, #reader-container .tts-hl, #reader-container .tts-sent').length }));
-    check('TXT 全屏: 朗读浮钮启动跟随朗读', r.reading && r.cur > 0, JSON.stringify(r));
-    await page.evaluate(() => document.querySelector('#fs-read-fab').click());
-    await page.waitForTimeout(300);
-  }
   await exitFs();
   let after = await page.evaluate(() => ({ fsStill: !!document.fullscreenElement, chromeHidden: document.body.classList.contains('chrome-hidden'), flash: document.querySelectorAll('#reader-container .w-active').length }));
   check('TXT 退出全屏: fullscreenElement 清空', !after.fsStill);

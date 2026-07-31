@@ -1,6 +1,6 @@
 /* 主控逻辑：书架 / 导入 / 阅读 / 生词本 / 设置 / 统计 */
 (() => {
-  const APP_VER = '2026-07-30.53'; // 前端版本号：诊断面板可见 + index.html 版本守卫比对
+  const APP_VER = '2026-07-30.54'; // 前端版本号：诊断面板可见 + index.html 版本守卫比对
   window.APP_VER = APP_VER; // 暴露给 index.html 内联守卫脚本做版本一致性校验
   const $ = s => document.querySelector(s);
   const $$ = s => Array.from(document.querySelectorAll(s));
@@ -885,16 +885,14 @@
         /* 当前屏读完：翻页或停止 */
         if (!this._canAdvance()) { this.stop(); toast('已读完'); return; }
         if (this._pageKey === this._lastKey) {
-          if (reader instanceof EpubReader && !this._moved) {
-            if (++this._nomove > 4) { this.stop(); toast('已读完'); return; }
-            setTimeout(() => this._step(), 350); return;
-          }
-          this.stop(); toast('已读完'); return;
+          /* 翻页动画/渲染还没完成，页面 key 没变：所有格式都重试，不立刻停 */
+          if (++this._nomove > 8) { this.stop(); toast('已读完'); return; }
+          setTimeout(() => this._step(), reader instanceof EpubReader ? 400 : 250); return;
         }
         this._nomove = 0; this._lastKey = this._pageKey;
         this._advance();
         this._segIdx = null;
-        setTimeout(() => this._step(), reader instanceof EpubReader ? 320 : 160);
+        setTimeout(() => this._step(), reader instanceof EpubReader ? 450 : (reader instanceof PdfReader ? 400 : 300));
         return;
       }
       const seg = this._pageSegs[this._segIdx];
@@ -922,10 +920,16 @@
     },
     _emptyFail() {
       this._empty++;
-      if (this._empty > 4 || !this._canAdvance()) { this.stop(); if (this._empty > 4) toast('已读完'); return; }
-      this._advance();
+      if (this._empty > 6 || !this._canAdvance()) { this.stop(); if (this._empty > 6) toast('已读完'); return; }
       this._segIdx = null;
-      setTimeout(() => this._step(), reader instanceof EpubReader ? 320 : 140);
+      if (this._empty <= 2) {
+        /* 先重试两次：可能文本层/分页动画还没就绪 */
+        setTimeout(() => this._step(), reader instanceof EpubReader ? 400 : 250);
+      } else {
+        /* 确实没文字，翻页继续 */
+        this._advance();
+        setTimeout(() => this._step(), reader instanceof EpubReader ? 450 : (reader instanceof PdfReader ? 400 : 300));
+      }
     },
     _canAdvance() {
       if (!reader) return false;
@@ -943,8 +947,6 @@
       if (!b) return;
       if (this.continuous) { b.textContent = '停止'; b.classList.add('reading'); }
       else { b.textContent = '朗读'; b.classList.remove('reading'); }
-      const fb = $('#fs-read-fab');
-      if (fb) { fb.classList.toggle('reading', this.continuous); fb.title = this.continuous ? '停止朗读 (全屏)' : '全屏朗读'; }
     }
   };
 
@@ -1158,7 +1160,8 @@
     const input = $('#shelf-sync-input');
     const val = (input && input.value || '').trim();
     if (!val) { toast('请输入同步口令'); return; }
-    if (val.length < 16) { toast('同步口令至少需要 16 个字符'); return; }
+    const minLen = SyncService.MIN_TOKEN_LENGTH || 6;
+    if (val.length < minLen) { toast('同步口令至少需要 ' + minLen + ' 个字符'); return; }
     if (!SyncService.setToken(val)) { toast('同步口令无效'); return; }
     toast('已保存');
     $('#shelf-sync-panel').classList.add('hidden');
@@ -1513,7 +1516,6 @@
     /* 全屏：按钮 + 状态同步 + F 快捷键（阅读视图、非输入框）+ 退出浮钮 */
     on('#btn-fs', 'click', toggleFullscreen);
     on('#fs-exit-fab', 'click', toggleFullscreen);
-    on('#fs-read-fab', 'click', () => { if (ttsCtl.continuous) ttsCtl.stop(); else ttsCtl.startContinuous(); });
     document.addEventListener('fullscreenchange', syncFsBtn);
     document.addEventListener('webkitfullscreenchange', syncFsBtn);
     document.addEventListener('keydown', (e) => {

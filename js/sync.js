@@ -240,7 +240,7 @@ const SyncService = (() => {
     return !!(file && file.data);
   }
 
-  const api = { init, setToken, getToken, available, syncing, syncOnce, pullBook, schedulePush, exportData, pull, push };
+  const api = { init, setToken, getToken, available, syncing, syncOnce, pullBook, schedulePush, exportData, pull, push, MIN_TOKEN_LENGTH };
   window.SyncService = api; // 便于调试与自动化测试直接调用
   return api;
 })();

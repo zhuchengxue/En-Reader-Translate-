@@ -118,10 +118,7 @@
     </div>
   </footer>
 
-  <!-- 全屏沉浸式：退出浮钮 + 朗读浮钮（仅全屏时显示，移动端无 Esc 也能退出 / 朗读） -->
-  <button id="fs-read-fab" class="fs-read-fab" title="全屏朗读 / 停止">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="6 4 20 12 6 20 6 4"></polygon></svg>
-  </button>
+  <!-- 全屏沉浸式：退出浮钮（仅全屏时显示，移动端无 Esc 也能退出） -->
   <button id="fs-exit-fab" class="fs-exit-fab" title="退出全屏 (Esc)">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3v3a2 2 0 0 1-2 2H3"></path><path d="M21 8h-3a2 2 0 0 1-2-2V3"></path><path d="M3 16h3a2 2 0 0 1 2 2v3"></path><path d="M16 21v-3a2 2 0 0 1 2-2h3"></path></svg>
   </button>
@@ -354,7 +351,7 @@ export default {
 /* 版本守卫：若浏览器缓存喂了旧版 app.js（APP_VER 与本页期望不符），
  * 自动注销 SW + 清空 Cache Storage + 强制带参重载一次，自愈旧缓存混跑。
  * sessionStorage 防死循环：自愈一次后若仍不符则停手（说明是别的问题）。 */
-window.__EXPECT_VER = '2026-07-30.53';
+window.__EXPECT_VER = '2026-07-30.54';
 window.addEventListener('load', function () {
   try {
     if (window.APP_VER === window.__EXPECT_VER) { sessionStorage.removeItem('ver-fix'); return; }
@@ -371,15 +368,15 @@ window.addEventListener('load', function () {
   } catch (e) {}
 });
 </script>
-<script src="js/db.js?v=2026-07-30.53"></script>
-<script src="js/services.js?v=2026-07-30.53"></script>
-<script src="js/interaction.js?v=2026-07-30.53"></script>
-<script src="js/readers/txt.js?v=2026-07-30.53"></script>
-<script src="js/readers/epub.js?v=2026-07-30.53"></script>
-<script src="js/readers/pdf.js?v=2026-07-30.53"></script>
-<script src="js/license.js?v=2026-07-30.53"></script>
-<script src="js/gutenberg.js?v=2026-07-30.53"></script>
-<script src="js/sync.js?v=2026-07-30.53"></script>
-<script src="js/app.js?v=2026-07-30.53"></script>
+<script src="js/db.js?v=2026-07-30.54"></script>
+<script src="js/services.js?v=2026-07-30.54"></script>
+<script src="js/interaction.js?v=2026-07-30.54"></script>
+<script src="js/readers/txt.js?v=2026-07-30.54"></script>
+<script src="js/readers/epub.js?v=2026-07-30.54"></script>
+<script src="js/readers/pdf.js?v=2026-07-30.54"></script>
+<script src="js/license.js?v=2026-07-30.54"></script>
+<script src="js/gutenberg.js?v=2026-07-30.54"></script>
+<script src="js/sync.js?v=2026-07-30.54"></script>
+<script src="js/app.js?v=2026-07-30.54"></script>
 </body>
 </html>
