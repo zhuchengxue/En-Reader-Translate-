@@ -10,15 +10,21 @@ const SyncService = (() => {
   let syncInProgress = false;
   const PUSH_DELAY = 2000;
   const MAX_PAYLOAD = 20 * 1024 * 1024; // 20MB 安全上限
+  const MIN_TOKEN_LENGTH = 16;
+
+  function normalizeToken(t) {
+    const value = (t || '').trim().slice(0, 64);
+    return value.length >= MIN_TOKEN_LENGTH ? value : '';
+  }
 
   function init() {
-    syncToken = (Settings.get().syncToken || '').trim();
+    syncToken = normalizeToken(Settings.get().syncToken);
     lastSyncTs = Settings.get()._syncTs || 0;
     return !!syncToken;
   }
 
   function setToken(t) {
-    syncToken = (t || '').trim().slice(0, 64);
+    syncToken = normalizeToken(t);
     Settings.set({ syncToken, _syncTs: 0 });
     lastSyncTs = 0;
     return !!syncToken;
@@ -159,40 +165,50 @@ const SyncService = (() => {
   async function pull() {
     if (!available()) return null;
     try {
-      const resp = await fetch('/api/sync?token=' + encodeURIComponent(syncToken));
-      if (!resp.ok) return null;
+      const resp = await fetch('/api/sync', {
+        headers: { 'Authorization': 'Bearer ' + syncToken },
+        cache: 'no-store'
+      });
+      if (!resp.ok) throw new Error('同步拉取失败(' + resp.status + ')');
       const json = await resp.json();
       lastSyncTs = json.ts || Date.now();
       Settings.set({ _syncTs: lastSyncTs });
       return json.data;
-    } catch (e) { return null; }
+    } catch (e) { throw e; }
   }
 
   async function push() {
     if (!available()) return;
     try {
       const data = await exportData();
-      const payload = JSON.stringify({ token: syncToken, data });
+      const uploadedFileIds = data.books.filter(b => !!b._file).map(b => b.id);
+      const payload = JSON.stringify({ data });
       if (payload.length > MAX_PAYLOAD) {
-        console.warn('[sync] 数据量 ' + (payload.length / 1048576).toFixed(1) + 'MB 超限，跳过推送');
-        return;
+        throw new Error('同步数据量超过 20MB，请移除部分书籍');
       }
       const resp = await fetch('/api/sync', {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ' + syncToken
+        },
+        cache: 'no-store',
         body: payload
       });
-      if (resp.ok) {
+      const result = await resp.json().catch(() => ({}));
+      if (resp.ok && result.ok === true) {
         lastSyncTs = Date.now();
         Settings.set({ _syncTs: lastSyncTs });
-        // 标记「文件已上传过」，下次只推元数据
+        // 只标记本次实际上传了文件体且服务端确认成功的书
         const now = Date.now();
-        const all = await DB.getAll('books');
-        for (const b of all) {
-          if (!b._syncedAt) { b._syncedAt = now; await DB.put('books', b); }
+        for (const id of uploadedFileIds) {
+          const b = await DB.get('books', id);
+          if (b) { b._syncedAt = now; await DB.put('books', b); }
         }
+        return true;
       }
-    } catch (e) {}
+      throw new Error(result.error || ('同步推送失败(' + resp.status + ')'));
+    } catch (e) { throw e; }
   }
 
   function schedulePush() {
@@ -209,11 +225,10 @@ const SyncService = (() => {
     syncInProgress = true;
     try {
       const remote = await pull();
-      if (!remote) return 0;
       const merged = await importData(remote);
       await push();
       return merged;
-    } catch (e) { return 0; }
+    } catch (e) { throw e; }
     finally { syncInProgress = false; }
   }
 

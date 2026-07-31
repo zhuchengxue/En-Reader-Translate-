@@ -2,7 +2,7 @@ const { chromium } = require('playwright');
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
-const ROOT = path.resolve('F:/Workbuddy/英文网页阅读器');
+const ROOT = path.resolve(__dirname, '..');
 const PORT = 8931;
 const PROXY = 8932;
 const MIME = { '.html':'text/html', '.js':'text/javascript', '.css':'text/css', '.json':'application/json', '.txt':'text/plain', '.png':'image/png', '.jpg':'image/jpeg', '.svg':'image/svg+xml' };
@@ -44,12 +44,12 @@ function serve(root, port) {
         return;
       }
       if (p === '/api/sync') {
-        const cors = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'GET, PUT, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type', 'Content-Type': 'application/json' };
+        const cors = { 'Access-Control-Allow-Methods': 'GET, PUT, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type, Authorization', 'Content-Type': 'application/json' };
         if (req.method === 'OPTIONS') { r.writeHead(204, cors); r.end(); return; }
-        const url = new URL(req.url, 'http://localhost');
+        const match = (req.headers.authorization || '').match(/^Bearer\s+(.+)$/i);
+        const token = (match ? match[1] : '').trim().slice(0, 64);
+        if (token.length < 16) { r.writeHead(401, cors); r.end(JSON.stringify({ error: 'Missing or weak token' })); return; }
         if (req.method === 'GET') {
-          const token = (url.searchParams.get('token') || '').trim().slice(0, 64);
-          if (!token) { r.writeHead(400, cors); r.end(JSON.stringify({ error: 'Missing token' })); return; }
           const data = SYNC_KV.get('sync:' + token) || { books: [], vocab: [] };
           r.writeHead(200, cors); r.end(JSON.stringify({ data, ts: Date.now() }));
           return;
@@ -60,8 +60,6 @@ function serve(root, port) {
           req.on('end', () => {
             let body = {};
             try { body = JSON.parse(b); } catch (e) {}
-            const token = (body.token || '').toString().trim().slice(0, 64);
-            if (!token) { r.writeHead(400, cors); r.end(JSON.stringify({ error: 'Missing token' })); return; }
             if (!body.data || !body.data.books) { r.writeHead(400, cors); r.end(JSON.stringify({ error: 'Missing data' })); return; }
             mergeSyncData('sync:' + token, body.data);
             r.writeHead(200, cors); r.end(JSON.stringify({ ok: true, ts: Date.now() }));

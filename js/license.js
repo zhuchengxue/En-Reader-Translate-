@@ -54,11 +54,16 @@
     async verify(token) {
       try {
         if (!token || typeof token !== 'string' || token.indexOf('.') < 0) return false;
-        const [data, sig] = token.split('.');
+        const parts = token.split('.');
+        if (parts.length !== 2) return false;
+        const [data, sig] = parts;
         const key = await pubKey();
         const ok = await crypto.subtle.verify({ name: 'Ed25519' }, key, b64urlToBytes(sig), new TextEncoder().encode(data));
         if (!ok) return false;
         const payload = JSON.parse(new TextDecoder().decode(b64urlToBytes(data)));
+        if (!payload || typeof payload !== 'object') return false;
+        if (!payload.code || payload.dev !== getDevId()) return false;
+        if (!Number.isFinite(payload.iat) || payload.iat > Date.now() + 300000) return false;
         if (payload.exp && Date.now() > payload.exp) return false;
         return true;
       } catch (e) { return false; }

@@ -1,0 +1,14 @@
+{
+  "name": "english-web-reader",
+  "version": "2026.7.30",
+  "private": true,
+  "description": "英文原版书阅读器及其浏览器回归测试",
+  "scripts": {
+    "test": "node tools/regression.js",
+    "test:license": "node tools/license-test.js",
+    "start": "node tools/serve.js"
+  },
+  "devDependencies": {
+    "playwright": "1.62.0"
+  }
+}

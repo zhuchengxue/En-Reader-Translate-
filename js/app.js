@@ -1,6 +1,6 @@
 /* 主控逻辑：书架 / 导入 / 阅读 / 生词本 / 设置 / 统计 */
 (() => {
-  const APP_VER = '2026-07-30.51'; // 前端版本号：诊断面板可见 + index.html 版本守卫比对
+  const APP_VER = '2026-07-30.52'; // 前端版本号：诊断面板可见 + index.html 版本守卫比对
   window.APP_VER = APP_VER; // 暴露给 index.html 内联守卫脚本做版本一致性校验
   const $ = s => document.querySelector(s);
   const $$ = s => Array.from(document.querySelectorAll(s));
@@ -76,6 +76,36 @@
 
   /* ---------- 工具 ---------- */
   const esc = s => String(s || '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  function safeCoverUrl(value) {
+    try {
+      const url = new URL(String(value || ''), location.href);
+      if (url.protocol === 'https:' || url.protocol === 'http:' || url.protocol === 'blob:') return url.href;
+      if (url.protocol === 'data:' && /^data:image\/(?:png|jpe?g|gif|webp);/i.test(String(value))) return String(value);
+    } catch (e) {}
+    return '';
+  }
+
+  function renderCover(holder, cover, type, title) {
+    const safeUrl = safeCoverUrl(cover);
+    if (safeUrl) {
+      const img = document.createElement('img');
+      img.alt = '';
+      img.src = safeUrl;
+      img.addEventListener('error', () => img.remove());
+      holder.appendChild(img);
+      return;
+    }
+    const placeholder = document.createElement('div');
+    placeholder.className = 'cover-placeholder';
+    const kind = document.createElement('span');
+    kind.className = 'cp-type';
+    kind.textContent = String(type || 'EBOOK').toUpperCase();
+    const name = document.createElement('span');
+    name.className = 'cp-title';
+    name.textContent = title || '';
+    placeholder.append(kind, name);
+    holder.appendChild(placeholder);
+  }
   const view = () => document.body.dataset.view;
 
   /* 按需加载重型第三方库：epub.js / pdf.js 仅在打开对应格式时才下载，
@@ -475,18 +505,16 @@
     for (const b of books) {
       const card = document.createElement('div');
       card.className = 'book-card' + (b._remoteOnly ? ' remote' : '');
-      const coverHtml = b.cover
-        ? '<img src="' + b.cover + '" alt="">'
-        : '<div class="cover-placeholder"><span class="cp-type">' + b.type.toUpperCase() + '</span><span class="cp-title">' + esc(b.title) + '</span></div>';
       const cloudBadge = b._remoteOnly
         ? '<div class="book-cloud" title="点击从云端同步到本机">' + CLOUD_SVG + '</div>'
         : '';
       card.innerHTML =
-        '<div class="book-cover">' + coverHtml + '</div>' +
+        '<div class="book-cover"></div>' +
         cloudBadge +
         '<div class="book-name">' + esc(b.title) + '</div>' +
         '<div class="book-progress">' + (b.progress ? '已读 ' + Math.round(b.progress * 100) + '%' : '未开始') + '</div>' +
         '<button class="book-del" title="删除">✕</button>';
+      renderCover(card.querySelector('.book-cover'), b.cover, b.type, b.title);
       card.addEventListener('click', () => openBook(b.id));
       const cloud = card.querySelector('.book-cloud');
       if (cloud) cloud.addEventListener('click', (e) => { e.stopPropagation(); syncAndOpenBook(b.id); });
@@ -642,16 +670,14 @@
     const fmt = Gutenberg.bestFormat(b.formats);
     const card = document.createElement('div');
     card.className = 'store-card';
-    const coverHtml = b.cover
-      ? '<img src="' + b.cover + '" alt="" onerror="this.remove()">'
-      : '<div class="cover-placeholder"><span class="cp-type">EBOOK</span><span class="cp-title">' + esc(b.title) + '</span></div>';
     const author = b.authors.join(', ');
     const dlLabel = fmt ? (fmt.ext === 'epub' ? '下载 EPUB' : '下载 TXT') : '无可用格式';
     card.innerHTML =
-      '<div class="book-cover">' + coverHtml + '</div>' +
+      '<div class="book-cover"></div>' +
       '<div class="book-name">' + esc(b.title) + '</div>' +
       (author ? '<div class="book-author">' + esc(author) + '</div>' : '') +
       '<button class="store-dl" ' + (fmt ? '' : 'disabled') + '>' + dlLabel + '</button>';
+    renderCover(card.querySelector('.book-cover'), b.cover, 'EBOOK', b.title);
     const btn = card.querySelector('.store-dl');
     if (fmt) {
       btn.addEventListener('click', async () => {
@@ -1068,7 +1094,8 @@
     const input = $('#shelf-sync-input');
     const val = (input && input.value || '').trim();
     if (!val) { toast('请输入同步口令'); return; }
-    SyncService.setToken(val);
+    if (val.length < 16) { toast('同步口令至少需要 16 个字符'); return; }
+    if (!SyncService.setToken(val)) { toast('同步口令无效'); return; }
     toast('已保存');
     $('#shelf-sync-panel').classList.add('hidden');
     await doSync({ silent: true });

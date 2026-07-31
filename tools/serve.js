@@ -6,7 +6,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const { Readable } = require('stream');
-const { webcrypto } = require('crypto');
+const { webcrypto, createHash } = require('crypto');
 const ROOT = path.resolve(__dirname, '..');
 const PORT = process.env.PORT || 9000;
 const MIME = { '.html':'text/html; charset=utf-8', '.js':'text/javascript; charset=utf-8', '.css':'text/css; charset=utf-8', '.json':'application/json', '.txt':'text/plain; charset=utf-8', '.png':'image/png', '.jpg':'image/jpeg', '.svg':'image/svg+xml', '.woff':'font/woff', '.woff2':'font/woff2' };
@@ -86,26 +86,24 @@ async function handleGutenberg(req, res) {
  * 与生产 functions/api/sync.js 保持一致：PUT 时合并保留 KV 中已有的 _file。 */
 const SYNC_FILE = path.join(ROOT, '.workbuddy', 'sync-dev.json');
 async function handleSync(req, res) {
-  const cors = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'GET, PUT, OPTIONS', 'Content-Type': 'application/json' };
+  const cors = { 'Access-Control-Allow-Methods': 'GET, PUT, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type, Authorization', 'Content-Type': 'application/json' };
   if (req.method === 'OPTIONS') { res.writeHead(204, cors); res.end(); return; }
-  const url = new URL(req.url, 'http://localhost');
-  let token = (url.searchParams.get('token') || '').trim().slice(0, 64);
+  const match = (req.headers.authorization || '').match(/^Bearer\s+(.+)$/i);
+  const token = (match ? match[1] : '').trim().slice(0, 64);
+  if (token.length < 16) { res.writeHead(401, cors); res.end(JSON.stringify({ error: 'Missing or weak token' })); return; }
+  const key = 'sync:v2:' + createHash('sha256').update(token).digest('hex');
   let store = {};
   try { store = JSON.parse(fs.readFileSync(SYNC_FILE, 'utf8')); } catch (e) {}
   if (req.method === 'GET') {
-    if (!token) { res.writeHead(400, cors); res.end(JSON.stringify({ error: 'Missing token' })); return; }
-    const key = 'sync:' + token;
     res.writeHead(200, cors);
     res.end(JSON.stringify({ data: store[key] || { books: [], vocab: [] }, ts: Date.now() }));
     return;
   }
   if (req.method === 'PUT') {
-    const body = JSON.parse(await readBody(req));
-    if (body && body.token) token = body.token.toString().trim().slice(0, 64);
-    if (!token) { res.writeHead(400, cors); res.end(JSON.stringify({ error: 'Missing token' })); return; }
+    let body = {};
+    try { body = JSON.parse(await readBody(req)); } catch (e) {}
     if (!body || !body.data) { res.writeHead(400, cors); res.end(JSON.stringify({ error: 'Missing data' })); return; }
     if (JSON.stringify(body.data).length > 20971520) { res.writeHead(413, cors); res.end(JSON.stringify({ error: 'Too large (>20MB)' })); return; }
-    const key = 'sync:' + token;
     const existing = store[key] || { books: [], vocab: [] };
     const fileMap = new Map();
     for (const b of existing.books || []) {

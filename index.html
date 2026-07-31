@@ -33,7 +33,7 @@
           <span>同步</span>
         </button>
         <div id="shelf-sync-panel" class="shelf-sync-panel hidden">
-          <input id="shelf-sync-input" class="shelf-sync-input" type="text" inputmode="text" spellcheck="false" placeholder="输入同步口令" autocomplete="off" maxlength="64">
+          <input id="shelf-sync-input" class="shelf-sync-input" type="password" inputmode="text" spellcheck="false" placeholder="输入至少 16 位同步密钥" autocomplete="new-password" minlength="16" maxlength="64">
           <div class="shelf-sync-actions">
             <button id="shelf-sync-save" class="tool-btn tool-btn-accent">同步</button>
             <button id="shelf-sync-cancel" class="tool-btn">取消</button>
@@ -351,7 +351,7 @@ export default {
 /* 版本守卫：若浏览器缓存喂了旧版 app.js（APP_VER 与本页期望不符），
  * 自动注销 SW + 清空 Cache Storage + 强制带参重载一次，自愈旧缓存混跑。
  * sessionStorage 防死循环：自愈一次后若仍不符则停手（说明是别的问题）。 */
-window.__EXPECT_VER = '2026-07-30.51';
+window.__EXPECT_VER = '2026-07-30.52';
 window.addEventListener('load', function () {
   try {
     if (window.APP_VER === window.__EXPECT_VER) { sessionStorage.removeItem('ver-fix'); return; }
@@ -368,15 +368,15 @@ window.addEventListener('load', function () {
   } catch (e) {}
 });
 </script>
-<script src="js/db.js?v=2026-07-30.51"></script>
-<script src="js/services.js?v=2026-07-30.51"></script>
-<script src="js/interaction.js?v=2026-07-30.51"></script>
-<script src="js/readers/txt.js?v=2026-07-30.51"></script>
-<script src="js/readers/epub.js?v=2026-07-30.51"></script>
-<script src="js/readers/pdf.js?v=2026-07-30.51"></script>
-<script src="js/license.js?v=2026-07-30.51"></script>
-<script src="js/gutenberg.js?v=2026-07-30.51"></script>
-<script src="js/sync.js?v=2026-07-30.51"></script>
-<script src="js/app.js?v=2026-07-30.51"></script>
+<script src="js/db.js?v=2026-07-30.52"></script>
+<script src="js/services.js?v=2026-07-30.52"></script>
+<script src="js/interaction.js?v=2026-07-30.52"></script>
+<script src="js/readers/txt.js?v=2026-07-30.52"></script>
+<script src="js/readers/epub.js?v=2026-07-30.52"></script>
+<script src="js/readers/pdf.js?v=2026-07-30.52"></script>
+<script src="js/license.js?v=2026-07-30.52"></script>
+<script src="js/gutenberg.js?v=2026-07-30.52"></script>
+<script src="js/sync.js?v=2026-07-30.52"></script>
+<script src="js/app.js?v=2026-07-30.52"></script>
 </body>
 </html>
