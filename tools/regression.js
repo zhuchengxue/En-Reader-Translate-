@@ -2,6 +2,15 @@ const { chromium } = require('playwright');
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const { createHash } = require('crypto');
+
+/* 与线上 functions/api/sync.js + 本地 tools/serve.js 保持一致的 KV 键派生：
+ * 服务端只以 token 的 SHA-256 哈希作为存储键，不在 KV 里存明文 token。
+ * 测试内联同步服务器原先用明文 'sync:<token>' 键，与线上哈希键分叉、不再覆盖生产路径。
+ * 这里对齐为 v2 哈希键，让回归测试真正走生产同款 key 路径（之前仅因 client 对 key 无感知而侥幸通过）。 */
+function syncKey(token) {
+  return 'sync:v2:' + createHash('sha256').update(token).digest('hex');
+}
 const ROOT = path.resolve(__dirname, '..');
 const PORT = 8931;
 const PROXY = 8932;
@@ -50,7 +59,7 @@ function serve(root, port) {
         const token = (match ? match[1] : '').trim().slice(0, 64);
         if (token.length < 6) { r.writeHead(401, cors); r.end(JSON.stringify({ error: 'Missing or weak token' })); return; }
         if (req.method === 'GET') {
-          const data = SYNC_KV.get('sync:' + token) || { books: [], vocab: [] };
+          const data = SYNC_KV.get(syncKey(token)) || { books: [], vocab: [] };
           r.writeHead(200, cors); r.end(JSON.stringify({ data, ts: Date.now() }));
           return;
         }
@@ -61,7 +70,7 @@ function serve(root, port) {
             let body = {};
             try { body = JSON.parse(b); } catch (e) {}
             if (!body.data || !body.data.books) { r.writeHead(400, cors); r.end(JSON.stringify({ error: 'Missing data' })); return; }
-            mergeSyncData('sync:' + token, body.data);
+            mergeSyncData(syncKey(token), body.data);
             r.writeHead(200, cors); r.end(JSON.stringify({ ok: true, ts: Date.now() }));
           });
           return;
@@ -194,7 +203,7 @@ async function setClickMode(page, mode) {
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
   const page = await ctx.newPage();
   const logs = [];
-  page.on('console', m => { if (m.type() === 'error') { const t = m.text(); if (/Failed to load resource|status of 4|status of 5/i.test(t)) return; logs.push(t); } });
+  page.on('console', m => { if (m.type() === 'error') { const t = m.text(); if (/Failed to load resource|status of 4|status of 5|CORS policy|api\.dictionaryapi\.dev|dictionaryapi/i.test(t)) return; logs.push(t); } });
   page.on('pageerror', e => logs.push('PAGEERROR: ' + e.message));
   /* 书签命名用 window.prompt，自动接受（移动端 mpage 不注册，不影响） */
   page.on('dialog', d => { try { d.accept('测试书签'); } catch (e) {} });
@@ -563,7 +572,7 @@ async function setClickMode(page, mode) {
   }, SYNC_TOKEN);
   // 守卫：首次推送必须把书文件体带上（_syncedAt 不能在推送前被其他用例的 schedulePush 打上，
   // 否则只上传元数据，B 端收不到文件）。这能抓住「令牌用例只清 localStorage 未清内存令牌」类回归。
-  const kvAfterPush1 = (SYNC_KV.get('sync:' + SYNC_TOKEN) || {}).books || [];
+  const kvAfterPush1 = (SYNC_KV.get(syncKey(SYNC_TOKEN)) || {}).books || [];
   const kvHasFiles = kvAfterPush1.filter(b => b._file).length;
   check('设备A首次推送含文件体', kvHasFiles >= 1, 'files=' + kvHasFiles);
   check('设备 A 同步推送成功', aSync.tokenSet === SYNC_TOKEN && aSync.merged >= 0, JSON.stringify(aSync));

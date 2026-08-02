@@ -78,9 +78,6 @@ const SyncService = (() => {
         try {
           const file = await DB.get('files', b.id);
           if (file && file.data) {
-            const bytes = file.data instanceof ArrayBuffer ? new Uint8Array(file.data) : file.data;
-            let binary = '';
-            for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
             meta._file = toBase64(file.data);
             meta._fileSize = file.data instanceof ArrayBuffer ? file.data.byteLength : file.data.length;
             needsAnotherPush = true; // 这次推文件体，下次只推元数据

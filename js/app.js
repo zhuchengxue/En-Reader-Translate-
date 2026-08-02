@@ -1,6 +1,6 @@
 /* 主控逻辑：书架 / 导入 / 阅读 / 生词本 / 设置 / 统计 */
 (() => {
-  const APP_VER = '2026-07-30.55'; // 前端版本号：诊断面板可见 + index.html 版本守卫比对
+  const APP_VER = '2026-07-30.56'; // 前端版本号：诊断面板可见 + index.html 版本守卫比对
   window.APP_VER = APP_VER; // 暴露给 index.html 内联守卫脚本做版本一致性校验
   const $ = s => document.querySelector(s);
   const $$ = s => Array.from(document.querySelectorAll(s));
@@ -288,10 +288,6 @@
       else if (dir === 'right') reader.prev();
     }
   };
-
-  function flash(info) {
-    Interaction.flashWord(info && info.range, info && info.doc);
-  }
 
   function closeAnyPopup() {
     let closed = false;
@@ -1484,7 +1480,7 @@
       if (e.key === 'Enter') { clearTimeout(storeTimer); storeTerm = e.target.value; storePage = 1; loadStore(true); }
       e.stopPropagation();
     });
-    on('#store-search-btn', 'click', () => { storeTerm = $('#store-search').value; storePage = 1; loadStore(true); });
+    on('#store-search-btn', 'click', () => { clearTimeout(storeTimer); storeTerm = $('#store-search').value; storePage = 1; loadStore(true); });
     on('#store-more', 'click', () => { if (storeHasMore && !storeLoading) { storePage++; loadStore(false); } });
 
     /* 兑换码激活 */
