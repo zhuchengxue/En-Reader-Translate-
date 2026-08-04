@@ -47,7 +47,6 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
 .btn-ghost:hover { background: var(--bg2); color: var(--text); }
 .btn-store { display: inline-flex; align-items: center; gap: 6px; }
 .btn-store .btn-ic { width: 16px; height: 16px; flex: none; }
-.btn-store.syncing .btn-ic { animation: spin 1s linear infinite; }
 .btn-store:disabled { opacity: .6; cursor: not-allowed; }
 .badge {
   background: var(--accent); color: #fff; font-size: 11px;
@@ -68,23 +67,6 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
   gap: 28px 24px; align-content: start;
 }
 
-/* 同步按钮容器 + 下拉小弹窗 */
-.shelf-sync-wrap { position: relative; display: inline-block; }
-.shelf-sync-panel {
-  position: absolute; top: calc(100% + 6px); right: 0; z-index: 30;
-  background: var(--bg2); border: 1px solid var(--border); border-radius: 10px;
-  padding: 10px; box-shadow: 0 6px 20px rgba(0,0,0,.18);
-  width: 240px; display: flex; flex-direction: column; gap: 8px;
-}
-.shelf-sync-panel.hidden { display: none; }
-.shelf-sync-input {
-  height: 36px; padding: 0 12px;
-  border: 1px solid var(--border); border-radius: 8px;
-  background: var(--bg3); color: var(--text); font-size: 14px; outline: none;
-}
-.shelf-sync-input:focus { border-color: var(--accent); }
-.shelf-sync-actions { display: flex; gap: 6px; justify-content: flex-end; }
-.shelf-sync-actions .tool-btn { padding: 6px 14px; font-size: 13px; }
 .tool-btn-accent { background: var(--accent); color: #fff; border-color: var(--accent); }
 .tool-btn-accent:hover { color: #fff; filter: brightness(1.08); }
 .book-card { position: relative; cursor: pointer; content-visibility: auto; contain-intrinsic-size: auto 260px; }

@@ -1,6 +1,6 @@
 /* 应用外壳缓存：网络优先（改动即时生效），失败回退缓存（离线可读）。仅缓存同源静态资源。
  * 版本号随每次重大改动递增，激活时清除旧版本缓存，避免浏览器一直用旧的破损 JS。 */
-const CACHE = 'en-reader-v37';
+const CACHE = 'en-reader-v38';
 self.addEventListener('install', (e) => {
   // 立即激活新 SW，配合 clients.claim 让新版本尽快接管
   self.skipWaiting();
@@ -25,7 +25,7 @@ self.addEventListener('fetch', (e) => {
   const relativePath = url.pathname.startsWith(scopePath) ? url.pathname.slice(scopePath.length) : '';
   const isNavigation = req.mode === 'navigate';
   const isStatic = /^(?:index\.html|manifest\.json|sw\.js|css\/[^/]+\.css|js\/.+\.js|vendor\/.+\.js)$/.test(relativePath);
-  // API 响应可能含同步密钥、书籍和生词；下载文件也由 IndexedDB 管理，绝不进入 Cache Storage。
+  // API 响应可能含书籍和生词缓存等；下载文件由 IndexedDB 管理，绝不进入 Cache Storage。
   if (!isNavigation && !isStatic) return;
   e.respondWith((async () => {
     try {

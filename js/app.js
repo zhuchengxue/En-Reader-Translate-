@@ -1,7 +1,14 @@
 /* 主控逻辑：书架 / 导入 / 阅读 / 生词本 / 设置 / 统计 */
 (() => {
-  const APP_VER = '2026-07-30.56'; // 前端版本号：诊断面板可见 + index.html 版本守卫比对
+  const APP_VER = '2026-07-30.57'; // 前端版本号：诊断面板可见 + index.html 版本守卫比对
   window.APP_VER = APP_VER; // 暴露给 index.html 内联守卫脚本做版本一致性校验
+  /* 同步功能已移除（v2026-07-30.57 起）。保留一个空壳以防任何遗留引用报错；
+   * 所有方法都是 no-op，不发起任何网络请求、不读写远端。 */
+  window.SyncService = {
+    init() { return false; }, getToken() { return ''; }, setToken() { return false; },
+    available() { return false; }, syncing() { return false; }, syncOnce() { return 0; },
+    pullBook() {}, schedulePush() {}, MIN_TOKEN_LENGTH: 6
+  };
   const $ = s => document.querySelector(s);
   const $$ = s => Array.from(document.querySelectorAll(s));
   /* 安全绑定：元素不存在时跳过并告警，绝不让一次 null.addEventListener
@@ -161,52 +168,6 @@
   function loading(on, text) {
     $('#loading').classList.toggle('hidden', !on);
     if (text) $('#loading-text').textContent = text;
-  }
-
-  /* ---------- 同步 UI 状态 ---------- */
-  let syncRunning = false;
-  function setSyncSpinning(on) {
-    const btn = $('#btn-shelf-sync');
-    if (!btn) return;
-    btn.classList.toggle('syncing', on);
-    btn.disabled = on;
-  }
-  async function doSync(opts = {}) {
-    if (syncRunning) return;
-    if (!SyncService.available()) {
-      if (!opts.silent && !SyncService.getToken()) _toggleSyncPanel();
-      return;
-    }
-    syncRunning = true;
-    setSyncSpinning(true);
-    try {
-      const merged = await SyncService.syncOnce();
-      await renderShelf();
-      if (view() !== 'reader') renderVocab();
-      if (!opts.silent) toast(merged ? '同步完成，合并了 ' + merged + ' 项' : '已是最新');
-      if (opts.onDone) await opts.onDone(merged);
-      return merged;
-    } catch (e) {
-      console.error('sync error', e);
-      if (!opts.silent) toast('同步失败');
-    } finally {
-      syncRunning = false;
-      setSyncSpinning(false);
-    }
-  }
-  async function syncAndOpenBook(id) {
-    const file = await DB.get('files', id);
-    if (file && file.data) { openBook(id); return; }
-    if (!SyncService.getToken()) { _toggleSyncPanel(); toast('请先设置同步口令'); return; }
-    toast('正在从云端拉取…');
-    await doSync({
-      silent: true,
-      onDone: async () => {
-        const file2 = await DB.get('files', id);
-        if (file2 && file2.data) openBook(id);
-        else toast('文件尚未同步到本机，请确认已在其他设备上传');
-      }
-    });
   }
 
   /* ---------- 单词/句子交互处理 ---------- */
@@ -492,8 +453,6 @@
   }
 
   /* ---------- 书架 ---------- */
-  const CLOUD_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/></svg>';
-
   async function renderShelf() {
     const books = (await DB.getAll('books')).sort((a, b) => b.addedAt - a.addedAt);
     const grid = $('#shelf-grid');
@@ -501,26 +460,19 @@
     $('#shelf-empty').classList.toggle('hidden', books.length > 0);
     for (const b of books) {
       const card = document.createElement('div');
-      card.className = 'book-card' + (b._remoteOnly ? ' remote' : '');
-      const cloudBadge = b._remoteOnly
-        ? '<div class="book-cloud" title="点击从云端同步到本机">' + CLOUD_SVG + '</div>'
-        : '';
+      card.className = 'book-card';
       card.innerHTML =
         '<div class="book-cover"></div>' +
-        cloudBadge +
         '<div class="book-name">' + esc(b.title) + '</div>' +
         '<div class="book-progress">' + (b.progress ? '已读 ' + Math.round(b.progress * 100) + '%' : '未开始') + '</div>' +
         '<button class="book-del" title="删除">✕</button>';
       renderCover(card.querySelector('.book-cover'), b.cover, b.type, b.title);
       card.addEventListener('click', () => openBook(b.id));
-      const cloud = card.querySelector('.book-cloud');
-      if (cloud) cloud.addEventListener('click', (e) => { e.stopPropagation(); syncAndOpenBook(b.id); });
       card.querySelector('.book-del').addEventListener('click', async (e) => {
         e.stopPropagation();
         if (!confirm('删除《' + b.title + '》？')) return;
         await DB.del('books', b.id);
         await DB.del('files', b.id);
-        SyncService.schedulePush();
         renderShelf();
       });
       grid.appendChild(card);
@@ -598,7 +550,6 @@
     }
     await DB.put('files', { id, data: buf });
     await DB.put('books', { id, type: ext, title, author, cover, fileName: opts.name || title, addedAt: Date.now(), progress: 0, location: null, source: opts.source || 'import' });
-    SyncService.schedulePush(); // 含书文件（base64 编码），自动同步到其他设备
     return id;
   }
 
@@ -995,8 +946,7 @@
       book = await DB.get('books', id);
       const file = await DB.get('files', id);
       if (!book || !file) {
-        if (book && book._remoteOnly) { syncAndOpenBook(id); return; }
-        const hint = '》的文件数据缺失，请重新导入（或从其他设备同步）';
+        const hint = '》的文件数据缺失，请重新导入';
         toast('《' + (book ? book.title : '该书') + hint);
         return;
       }
@@ -1063,7 +1013,6 @@
       book.location = info.location;
       book.updatedAt = Date.now();
       await DB.put('books', book);
-      SyncService.schedulePush();
     }, 800);
   }
 
@@ -1169,39 +1118,6 @@
     $('#settings-panel').classList.add('open'); $('#settings-mask').classList.remove('hidden');
   }
   function closeSettings() { $('#settings-panel').classList.remove('open'); $('#settings-mask').classList.add('hidden'); }
-  /* 书架顶「同步」按钮：直接控制内联同步面板的展开/收起 */
-  function _toggleSyncPanel() {
-    const panel = $('#shelf-sync-panel');
-    const input = $('#shelf-sync-input');
-    if (!panel) return;
-    // 已设置口令时，顶部「同步」按钮直接执行同步并转圈圈
-    if (SyncService.getToken()) {
-      panel.classList.add('hidden');
-      doSync();
-      return;
-    }
-    if (panel.classList.contains('hidden')) {
-      SyncService.init();
-      input.value = SyncService.getToken() || '';
-      panel.classList.remove('hidden');
-      setTimeout(() => input && input.focus(), 50);
-    } else {
-      panel.classList.add('hidden');
-    }
-  }
-  async function _saveSyncToken() {
-    const input = $('#shelf-sync-input');
-    const val = (input && input.value || '').trim();
-    if (!val) { toast('请输入同步口令'); return; }
-    const minLen = SyncService.MIN_TOKEN_LENGTH || 6;
-    if (val.length < minLen) { toast('同步口令至少需要 ' + minLen + ' 个字符'); return; }
-    if (!SyncService.setToken(val)) { toast('同步口令无效'); return; }
-    toast('已保存');
-    $('#shelf-sync-panel').classList.add('hidden');
-    await doSync({ silent: true });
-  }
-  window._toggleSync = _toggleSyncPanel;
-  window._saveSyncToken = _saveSyncToken;
   function closeProxyHelp() { $('#proxy-help-panel').classList.remove('open'); $('#proxy-help-mask').classList.add('hidden'); }
 
   /* ---------- 兑换码激活 / 试用限次 ---------- */
@@ -1672,13 +1588,6 @@
       else toast('当前环境不支持自动复制');
     });
 
-    /* 书架同步面板（点开同步按钮展开） */
-    on('#shelf-sync-save', 'click', _saveSyncToken);
-    on('#shelf-sync-cancel', 'click', () => $('#shelf-sync-panel').classList.add('hidden'));
-    on('#shelf-sync-input', 'keydown', (e) => {
-      if (e.key === 'Enter') { e.preventDefault(); _saveSyncToken(); }
-    });
-
     /* 词典卡片 */
     on('#dict-speak', 'click', () => {
       if (!dictCurrent) return;
@@ -1699,7 +1608,6 @@
       updateVocabCount();
       toast('已添加');
       hideDict();
-      SyncService.schedulePush();
     });
 
     /* 句子弹层 */
@@ -1762,12 +1670,6 @@
     /* 授权检查：未激活提示试用剩余；试用耗尽弹激活模态（仅真实浏览器，测试环境不拦） */
     try { await initLicense(); } catch (e) { console.error('license init error', e); }
     renderShelf();
-    /* 跨设备同步：初始化 → 自动拉取合并 → 刷新书架（如有远端新书） */
-    try {
-      if (SyncService.init()) {
-        await doSync({ silent: true });
-      }
-    } catch (e) { console.error('sync init error', e); }
     /* 自动恢复上次打开的书（需设置中开启「自动打开上一次看的书」） */
     try {
       const lastId = settings.lastBookId;

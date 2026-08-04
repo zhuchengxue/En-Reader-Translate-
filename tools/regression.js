@@ -2,39 +2,10 @@ const { chromium } = require('playwright');
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
-const { createHash } = require('crypto');
-
-/* 与线上 functions/api/sync.js + 本地 tools/serve.js 保持一致的 KV 键派生：
- * 服务端只以 token 的 SHA-256 哈希作为存储键，不在 KV 里存明文 token。
- * 测试内联同步服务器原先用明文 'sync:<token>' 键，与线上哈希键分叉、不再覆盖生产路径。
- * 这里对齐为 v2 哈希键，让回归测试真正走生产同款 key 路径（之前仅因 client 对 key 无感知而侥幸通过）。 */
-function syncKey(token) {
-  return 'sync:v2:' + createHash('sha256').update(token).digest('hex');
-}
 const ROOT = path.resolve(__dirname, '..');
 const PORT = 8931;
 const PROXY = 8932;
 const MIME = { '.html':'text/html', '.js':'text/javascript', '.css':'text/css', '.json':'application/json', '.txt':'text/plain', '.png':'image/png', '.jpg':'image/jpeg', '.svg':'image/svg+xml' };
-
-/* 本地测试用的同步 KV（内存版），与生产 functions/api/sync.js 行为一致：
- * PUT 时合并保留已有 _file，防止元数据推送把文件覆盖掉。 */
-const SYNC_KV = new Map();
-function mergeSyncData(token, incoming) {
-  const existing = SYNC_KV.get(token) || { books: [], vocab: [] };
-  const fileMap = new Map();
-  for (const b of existing.books || []) {
-    if (b._file) fileMap.set(b.id, { _file: b._file, _fileSize: b._fileSize });
-  }
-  const mergedBooks = [];
-  for (const b of incoming.books || []) {
-    const kept = fileMap.get(b.id);
-    if (kept && !b._file) mergedBooks.push({ ...b, _file: kept._file, _fileSize: kept._fileSize });
-    else mergedBooks.push(b);
-  }
-  const merged = { books: mergedBooks, vocab: incoming.vocab || [] };
-  SYNC_KV.set(token, merged);
-  return merged;
-}
 
 function serve(root, port) {
   const rootNorm = path.resolve(root);
@@ -50,32 +21,6 @@ function serve(root, port) {
           r.writeHead(200, { 'Content-Type': 'application/json' });
           r.end(JSON.stringify({ translatedText: 'MOCK翻译:' + text }));
         });
-        return;
-      }
-      if (p === '/api/sync') {
-        const cors = { 'Access-Control-Allow-Methods': 'GET, PUT, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type, Authorization', 'Content-Type': 'application/json' };
-        if (req.method === 'OPTIONS') { r.writeHead(204, cors); r.end(); return; }
-        const match = (req.headers.authorization || '').match(/^Bearer\s+(.+)$/i);
-        const token = (match ? match[1] : '').trim().slice(0, 64);
-        if (token.length < 6) { r.writeHead(401, cors); r.end(JSON.stringify({ error: 'Missing or weak token' })); return; }
-        if (req.method === 'GET') {
-          const data = SYNC_KV.get(syncKey(token)) || { books: [], vocab: [] };
-          r.writeHead(200, cors); r.end(JSON.stringify({ data, ts: Date.now() }));
-          return;
-        }
-        if (req.method === 'PUT') {
-          let b = '';
-          req.on('data', c => b += c);
-          req.on('end', () => {
-            let body = {};
-            try { body = JSON.parse(b); } catch (e) {}
-            if (!body.data || !body.data.books) { r.writeHead(400, cors); r.end(JSON.stringify({ error: 'Missing data' })); return; }
-            mergeSyncData(syncKey(token), body.data);
-            r.writeHead(200, cors); r.end(JSON.stringify({ ok: true, ts: Date.now() }));
-          });
-          return;
-        }
-        r.writeHead(405, cors); r.end('Method not allowed');
         return;
       }
       if (p === '/') p = '/index.html';
@@ -401,26 +346,6 @@ async function setClickMode(page, mode) {
   check('朗读从当前屏开始(非首页)', spoken && spoken.trim() && spoken.trim() !== (firstPara || '').trim(), JSON.stringify({ first: (firstPara || '').slice(0, 24), spoken: spoken.slice(0, 24) }));
   await page.evaluate(() => document.querySelector('#btn-read').click()); await page.waitForTimeout(100); // 停，复位状态
 
-  // 同步令牌最短 6 位（Part A 验收）：直接验证 normalizeToken 门限 + 输入框 minlength
-  const tokOk = await page.evaluate(() => {
-    if (!window.SyncService) return { ok: false };
-    const tooShort = SyncService.setToken('12345');      // 5 位应拒绝
-    const accepted = SyncService.setToken('123456');     // 6 位应接受
-    const input = document.querySelector('#shelf-sync-input');
-    const min = input ? input.getAttribute('minlength') : null;
-    const ok = tooShort === false && accepted === true && SyncService.getToken() === '123456';
-    // 清理：必须同时清【内存口令】+【localStorage】！只清 localStorage 不够——SyncService
-    // 的 in-memory syncToken 仍是 '123456'，后续 EPUB/PDF 用例 openByTitle→openBook→schedulePush
-    // 会在 2s 后触发一次真实推送，给所有图书打上 _syncedAt，导致跨设备同步用例只上传元数据
-    // （无文件体），B 端永远收不到书文件。这是之前该用例偶发 FAIL 的根因。
-    SyncService.setToken('');                             // 清内存口令
-    const s = JSON.parse(localStorage.getItem('en-reader-settings') || '{}');
-    delete s.syncToken; delete s._syncTs;
-    localStorage.setItem('en-reader-settings', JSON.stringify(s));
-    return { ok, tooShort, accepted, min };
-  });
-  check('同步令牌最短 6 位(6可用/5拒绝)', tokOk.ok === true && tokOk.min === '6', JSON.stringify(tokOk));
-
   // 翻页效果设置 + 全屏退出浮钮 + 设置关闭按钮
   const paSeg = await page.evaluate(() => !!document.querySelector('#pageanim-seg'));
   check('翻页效果设置存在', paSeg);
@@ -558,57 +483,9 @@ async function setClickMode(page, mode) {
   }
   await mctx.close();
 
-  // ===== 跨设备同步：A 导入并同步后，B 拉取应能打开同一本书 =====
-  const SYNC_TOKEN = 'regression-sync-token';
+  // 同步功能已移除；返回书架前关闭「自动恢复上次看的书」，避免 reload 后自动进阅读视图干扰后续用例
   await page.evaluate(() => { const s = JSON.parse(localStorage.getItem('en-reader-settings') || '{}'); s.autoResumeBook = false; localStorage.setItem('en-reader-settings', JSON.stringify(s)); });
-  await page.keyboard.press('Escape'); await page.waitForTimeout(200);
   await page.goto(BASE); await page.waitForTimeout(800); // 回到书架
-  // 设备 A：直接调用 SyncService 设置口令并推送
-  const aSync = await page.evaluate(async (token) => {
-    if (!window.SyncService) return { noService: true };
-    SyncService.setToken(token);
-    const merged = await SyncService.syncOnce();
-    return { merged, tokenSet: SyncService.getToken(), online: navigator.onLine };
-  }, SYNC_TOKEN);
-  // 守卫：首次推送必须把书文件体带上（_syncedAt 不能在推送前被其他用例的 schedulePush 打上，
-  // 否则只上传元数据，B 端收不到文件）。这能抓住「令牌用例只清 localStorage 未清内存令牌」类回归。
-  const kvAfterPush1 = (SYNC_KV.get(syncKey(SYNC_TOKEN)) || {}).books || [];
-  const kvHasFiles = kvAfterPush1.filter(b => b._file).length;
-  check('设备A首次推送含文件体', kvHasFiles >= 1, 'files=' + kvHasFiles);
-  check('设备 A 同步推送成功', aSync.tokenSet === SYNC_TOKEN && aSync.merged >= 0, JSON.stringify(aSync));
-
-  // 模拟 A 后续只改进度（元数据推送），不应把 KV 里的文件覆盖掉
-  await page.evaluate(() => { const c = [...document.querySelectorAll('#shelf-grid .book-card')].find(x => x.querySelector('.book-name') && /Gatsby/i.test(x.querySelector('.book-name').textContent)); c && c.click(); });
-  await page.waitForSelector('#reader-container .txt-content', { timeout: 10000 }).catch(() => {});
-  await page.waitForTimeout(800);
-  await page.evaluate(() => { if (typeof reader !== 'undefined' && reader.next) reader.next(); });
-  await page.waitForTimeout(1500);
-  // 触发一次进度同步（元数据推送）
-  const aMetaPush = await page.evaluate(async () => { if (!window.SyncService) return -1; await SyncService.syncOnce(); return 0; });
-  await page.waitForTimeout(1500);
-
-  // 设备 B：全新浏览器上下文，只同步不导入
-  const bctx = await browser.newContext();
-  const bpage = await bctx.newPage();
-  bpage.on('pageerror', e => logs.push('SYNC-B PAGEERROR: ' + e.message));
-  await bpage.goto(BASE);
-  await bpage.waitForTimeout(800);
-  await bpage.evaluate((token) => { if (window.SyncService) SyncService.setToken(token); }, SYNC_TOKEN);
-  await bpage.goto(BASE); // 用 init 自动同步 + 渲染书架
-  await bpage.waitForTimeout(2500);
-  const bShelf = await bpage.evaluate(() => ({ count: document.querySelectorAll('#shelf-grid .book-card').length, names: [...document.querySelectorAll('#shelf-grid .book-name')].map(x => x.textContent).slice(0, 5), cloudCount: document.querySelectorAll('#shelf-grid .book-cloud').length }));
-  check('设备 B 同步后能看到 A 的图书', bShelf.count >= 1, JSON.stringify(bShelf));
-  check('设备 B 自动同步后图书已下载(无云朵标)', bShelf.cloudCount === 0, 'cloudCount=' + bShelf.cloudCount);
-  // B 打开同步下来的书，不应提示“文件缺失”
-  const bOpenOk = await bpage.evaluate(async () => {
-    const c = [...document.querySelectorAll('#shelf-grid .book-card')].find(x => x.querySelector('.book-name') && /Gatsby/i.test(x.querySelector('.book-name').textContent));
-    if (!c) return { found: false };
-    c.click();
-    await new Promise(r => setTimeout(r, 2500));
-    return { found: true, view: document.body.dataset.view, hasReader: !!document.querySelector('#reader-container .txt-viewport, #reader-container .txt-content'), toast: document.querySelector('.toast') ? document.querySelector('.toast').textContent : '' };
-  });
-  check('设备 B 能打开同步下来的书', bOpenOk.found && bOpenOk.view === 'reader' && bOpenOk.hasReader && !/文件数据|文件尚未同步|重新导入/.test(bOpenOk.toast), JSON.stringify(bOpenOk));
-  await bctx.close();
 
   /* ─── 全屏沉浸式：句子翻译不应让浏览器退出全屏 ───
    * 根因：EPUB 内容在 iframe 内，在 iframe 文档里建真实文本选区会让 Chrome
